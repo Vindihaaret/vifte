@@ -23,8 +23,16 @@ class LiveDialog(Adw.PreferencesDialog):
         self.set_content_width(620)
         self.set_content_height(760)
         win.live_dialogs.add(self)
-        self.connect("map", lambda *_: GLib.idle_add(lambda: self.set_focus(None)))
+        self.connect("map", lambda *_: GLib.timeout_add(100, self._unfocus))
         self.connect("closed", lambda *_: win.live_dialogs.discard(self))
+
+    def _unfocus(self):
+        """Ikke start med markert tekst i første tekstfelt."""
+        focus = self.get_focus()
+        if isinstance(focus, Gtk.Editable):
+            focus.select_region(0, 0)
+        self.set_focus(None)
+        return False
 
     def changed(self, rebuild_cards=True):
         self.win.config_changed(rebuild_cards)
@@ -235,6 +243,7 @@ class CurveDialog(LiveDialog):
         for lab, w in ((_("Temperatur °C"), self.pt_t), (_("Verdi"), self.pt_v)):
             box.append(Gtk.Label(label=lab))
             box.append(w)
+        self.pt_box = box   # vises bare når et punkt er valgt
         self._pt_lock = False
         self.pt_t.connect("value-changed", self.point_edited)
         self.pt_v.connect("value-changed", self.point_edited)
@@ -262,8 +271,7 @@ class CurveDialog(LiveDialog):
 
     def point_selected(self, i):
         sens = i is not None and i < len(self.graph.points)
-        self.pt_t.set_sensitive(sens)
-        self.pt_v.set_sensitive(sens)
+        self.pt_box.set_visible(sens)
         if sens:
             self._pt_lock = True
             self.pt_t.set_value(self.graph.points[i][0])

@@ -1,5 +1,12 @@
 # Vifte – FanControl for Linux
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/curves-dark.png">
+    <img alt="Vifte showing fan curves for CPU, GPU, case fans and pump" src="docs/screenshots/curves-light.png" width="820">
+  </picture>
+</p>
+
 Vifte is a native Linux fan control application modelled on [FanControl](https://getfancontrol.com) by
 Rem0o. It has the same features and **reads and writes the same configuration files** (`userConfig.json`
 etc.), so configurations can be moved between Windows and Linux.
@@ -21,6 +28,13 @@ etc.), so configurations can be moved between Windows and Linux.
 Made by **Jan Ivar Sørensen** using [Claude Code](https://claude.com/claude-code), Anthropic's AI coding
 assistant – from working out the FanControl configuration format to the GTK interface, the background
 service, the tray icon and the Claude integration.
+
+## Screenshots
+
+| Light | Dark |
+|---|---|
+| ![Curve editor, light theme](docs/screenshots/curve-editor-light.png) | ![Curve editor, dark theme](docs/screenshots/curve-editor-dark.png) |
+| ![Fan controls, light theme](docs/screenshots/controls-light.png) | ![Fan controls, dark theme](docs/screenshots/controls-dark.png) |
 
 ## Requirements
 
