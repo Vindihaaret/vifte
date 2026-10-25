@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Vifte (tray)
+Name[nb]=Vifte (statusfelt)
+Comment=Shows Vifte in the system tray
+Comment[nb]=Viser Vifte i statusfeltet
+Exec=vifte tray
+Icon=no.vifte.Vifte
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3

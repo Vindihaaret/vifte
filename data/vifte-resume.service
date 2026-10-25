@@ -1,0 +1,10 @@
+[Unit]
+Description=Vifte – ta tilbake viftestyringen etter hvilemodus
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl try-restart vifted.service
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target

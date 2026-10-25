@@ -1,0 +1,19 @@
+[Icon Theme]
+Name=Hicolor
+Comment=Vifte icons
+Hidden=true
+Directories=scalable/apps,symbolic/apps
+
+[scalable/apps]
+Size=128
+MinSize=8
+MaxSize=512
+Context=Applications
+Type=Scalable
+
+[symbolic/apps]
+Size=16
+MinSize=8
+MaxSize=512
+Context=Applications
+Type=Scalable

@@ -1,0 +1,20 @@
+[Unit]
+Description=Vifte – viftestyring (FanControl-kompatibel)
+After=systemd-modules-load.service nvidia-persistenced.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=/opt/vifte
+ExecStart=/usr/bin/python3 -m vifte.daemon
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=vifte
+RuntimeDirectoryMode=0755
+StateDirectory=vifte
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

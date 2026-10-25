@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Vifte
+GenericName=Fan Control
+GenericName[nb]=Viftestyring
+Comment=Control your fans with curves – compatible with FanControl
+Comment[nb]=Styr viftene med kurver – kompatibel med FanControl
+Exec=vifte gui
+Icon=no.vifte.Vifte
+Terminal=false
+Categories=System;Settings;HardwareSettings;GTK;
+Keywords=fan;fancontrol;temperature;cooling;pwm;vifte;temperatur;kjøling;
+StartupNotify=true
