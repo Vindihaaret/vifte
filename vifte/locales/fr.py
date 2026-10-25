@@ -338,4 +338,8 @@ T = {
     "Missing sensors:": "Capteurs manquants :",
     "Cannot reach vifted ({}): {}\nStart the service: sudo systemctl start vifted":
         "Impossible de joindre vifted ({}) : {}\nDémarrez le service : sudo systemctl start vifted",
+    "Automatic": "Automatique",
+    "CPU temperature in the menu": "Température CPU dans le menu",
+    "GPU temperature in the menu": "Température GPU dans le menu",
+    "Shown at the top of the system tray icon's menu": "Affichée en haut du menu de l'icône de la zone de notification",
 }

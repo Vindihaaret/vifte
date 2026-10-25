@@ -118,6 +118,10 @@ EN = {
         "Fan control for Linux.\nReads and writes configuration files from FanControl (Rem0o) for Windows.",
     "OK": "OK",
     "Hovedkort": "Motherboard",
+    "Automatisk": "Automatic",
+    "CPU-temperatur i menyen": "CPU temperature in the menu",
+    "GPU-temperatur i menyen": "GPU temperature in the menu",
+    "Vises øverst i menyen til ikonet i statusfeltet": "Shown at the top of the system tray icon's menu",
     "NØDMODUS: {} er {} – alle styrte vifter går på 100 %":
         "EMERGENCY MODE: {} is {} – all controlled fans run at 100 %",
     "Claude (MCP)": "Claude (MCP)",

@@ -738,13 +738,20 @@ class MainWindow(Adw.ApplicationWindow):
             return
         m = self.model
         st = m.state
-        key = (tuple(st.get("configs", [])), m.name, bool(st.get("paused")), i18n.current(), self.connected)
+        temps = self.tray_temperatures()
+        key = (tuple(st.get("configs", [])), m.name, bool(st.get("paused")), i18n.current(), self.connected,
+               tuple(temps))
         if key != getattr(self, "_tray_key", None):
             self._tray_key = key
             configs = [{"label": n[:-5] if n.endswith(".json") else n, "toggle": "radio",
                         "state": n == m.name, "action": (lambda n=n: self.switch_config(n))}
                        for n in st.get("configs", [])]
-            tray.set_menu([
+            # Temperaturene øverst, adskilt fra resten med en skillestrek
+            top = [{"key": k, "label": label, "action": self.get_application().show_window}
+                   for k, label in temps.items()]
+            if top:
+                top.append({"separator": True})
+            tray.set_menu(top + [
                 {"label": _("Vis Vifte"), "action": self.get_application().show_window},
                 {"separator": True},
                 {"label": _("Konfigurasjoner"), "children": configs, "enabled": bool(configs)},
@@ -754,6 +761,7 @@ class MainWindow(Adw.ApplicationWindow):
                 {"separator": True},
                 {"label": _("Avslutt"), "action": self.request_quit},
             ])
+        tray.menu.update_labels(temps)
         wanted = {}
         default = parse_color(m.cfg.window.get("TrayIconColor")) or (1, 1, 1)
         for n, t in enumerate(m.cfg.window.get("TrayIcons") or []):
@@ -784,6 +792,45 @@ class MainWindow(Adw.ApplicationWindow):
             if e["id"] > last:
                 msg = e.get("msg") or [e.get("text", ""), []]
                 self.toast("Claude: " + _(msg[0]).format(*msg[1]))
+
+    def auto_tray_sensor(self, kind):
+        """Standardsensor for menyen: CPU-kjernetemperatur eller GPU-temperatur."""
+        sensors = [s for s in self.model.state.get("sensors", []) if s["kind"] == "temperature"]
+        if kind == "cpu":
+            prefs = [lambda s: s["id"] == "/amdcpu/0/temperature/2",
+                     lambda s: s["id"].startswith("/intelcpu/") and "package" in s["name"].lower(),
+                     lambda s: s["id"].startswith(("/amdcpu/", "/intelcpu/"))]
+        else:
+            prefs = [lambda s: s["id"].startswith("NVApiWrapper/") and s["id"].endswith("/sensor/0"),
+                     lambda s: s["id"].startswith("/gpu-amd/") and s["name"].lower() == "edge",
+                     lambda s: s["id"].startswith(("NVApiWrapper/", "/gpu-amd/"))]
+        for pref in prefs:
+            hit = next((s for s in sensors if pref(s)), None)
+            if hit:
+                return hit["id"]
+        return None
+
+    def tray_temperatures(self):
+        """{"cpu": "CPU: 45 °C", "gpu": "GPU: 38 °C"} etter brukerens valg i innstillingene."""
+        from ..i18n import get_setting
+        m = self.model
+        out = {}
+        for kind in ("cpu", "gpu"):
+            choice = get_setting(f"tray_{kind}_sensor", "auto")
+            if choice == "hide":
+                continue
+            ident = self.auto_tray_sensor(kind) if choice == "auto" else choice
+            if not ident:
+                continue
+            v = m.temp_value(ident)
+            if v is None:
+                text = "–"
+            elif m.fahrenheit:
+                text = f"{v * 9 / 5 + 32:.0f} °F"
+            else:
+                text = f"{v:.0f} °C"
+            out[kind] = f"{kind.upper()}: {text}"
+        return out
 
     def banner_clicked(self, _b):
         act = getattr(self, "banner_action", None)
@@ -936,11 +983,18 @@ class MainWindow(Adw.ApplicationWindow):
         langs = [(k, _(label)) for k, label in LANGUAGES]
         g.add(combo_row("Språk / Language", langs, language_setting(),
                         lambda v: self.change_language(v, dlg)))
-        if os.path.exists(AUTOSTART_SYSTEM):
+        if self.get_application().tray:
+            from ..i18n import get_setting, set_setting
             g = Adw.PreferencesGroup(title=_("Statusfelt"))
             page.add(g)
-            g.add(switch_row(_("Start i statusfeltet ved innlogging"), autostart_enabled(), set_autostart,
-                             _("Viser ikonet i statusfeltet uten å åpne vinduet")))
+            if os.path.exists(AUTOSTART_SYSTEM):
+                g.add(switch_row(_("Start i statusfeltet ved innlogging"), autostart_enabled(), set_autostart,
+                                 _("Viser ikonet i statusfeltet uten å åpne vinduet")))
+            sensors = [("auto", _("Automatisk")), ("hide", _("Skjul"))] + self.model.temp_choices()
+            for kind, title in (("cpu", _("CPU-temperatur i menyen")), ("gpu", _("GPU-temperatur i menyen"))):
+                g.add(combo_row(title, sensors, get_setting(f"tray_{kind}_sensor", "auto"),
+                                lambda v, k=kind: (set_setting(f"tray_{k}_sensor", v), self.update_tray()),
+                                subtitle=_("Vises øverst i menyen til ikonet i statusfeltet")))
         self.build_mcp_settings(page)
         self.build_update_settings(page)
         g = Adw.PreferencesGroup(title=_("Tjeneste"))

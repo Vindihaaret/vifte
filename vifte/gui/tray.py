@@ -176,6 +176,19 @@ class Menu:
         self.conn.emit_signal(None, self.path, "com.canonical.dbusmenu", "LayoutUpdated",
                               GLib.Variant("(ui)", (self.revision, 0)))
 
+    def update_labels(self, labels):
+        """Endrer teksten på elementer med en «key» uten å bygge menyen på nytt
+        (brukes for temperaturene øverst, som endrer seg hele tiden)."""
+        changed = []
+        for it in self.items.values():
+            key = it.get("key")
+            if key in labels and labels[key] != it.get("label"):
+                it["label"] = labels[key]
+                changed.append((it["_id"], {"label": GLib.Variant("s", it["label"].replace("_", "__"))}))
+        if changed:
+            self.conn.emit_signal(None, self.path, "com.canonical.dbusmenu", "ItemsPropertiesUpdated",
+                                  GLib.Variant("(a(ia{sv})a(ias))", (changed, [])))
+
     def _number(self, items):
         for it in items:
             it["_id"] = len(self.items) + 1

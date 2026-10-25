@@ -480,6 +480,34 @@ class UpdaterTests(unittest.TestCase):
             updater.extract(tar, os.path.join(self.dir, "out"), "v1.2.0")
 
 
+class TrayMenuTests(unittest.TestCase):
+    def test_temperature_labels_update_without_new_layout(self):
+        try:
+            from vifte.gui.tray import Menu
+        except (ImportError, ValueError) as ex:
+            self.skipTest(f"GTK not available: {ex}")
+
+        class Conn:
+            def __init__(self):
+                self.signals = []
+
+            def register_object(self, *a):
+                return 1
+
+            def emit_signal(self, _dest, _path, _iface, name, params):
+                self.signals.append((name, params.unpack() if params else None))
+
+        conn = Conn()
+        menu = Menu(conn, "/test")
+        menu.set([{"key": "cpu", "label": "CPU: 45 °C"}, {"separator": True}, {"label": "Quit"}])
+        conn.signals.clear()
+        menu.update_labels({"cpu": "CPU: 45 °C"})
+        self.assertEqual(conn.signals, [], "unchanged text sends nothing")
+        menu.update_labels({"cpu": "CPU: 52 °C"})
+        self.assertEqual([n for n, _ in conn.signals], ["ItemsPropertiesUpdated"])
+        self.assertEqual(conn.signals[0][1][0][0][1]["label"], "CPU: 52 °C")
+
+
 class TranslationTests(unittest.TestCase):
     def test_other_languages_are_complete_and_keep_placeholders(self):
         from vifte import i18n
