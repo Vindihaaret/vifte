@@ -159,6 +159,35 @@ EN = {
     "Byttet til konfigurasjonen «{}»": "Switched to configuration “{}”",
     "Lagret konfigurasjonen «{}»": "Saved configuration “{}”",
     "Angret siste endring": "Undid the last change",
+    # --- oppdateringer
+    "Se etter oppdateringer …": "Check for updates …",
+    "Oppdateringer": "Updates",
+    "Se etter oppdateringer automatisk": "Check for updates automatically",
+    "Én gang i måneden, fra GitHub": "Once a month, from GitHub",
+    "aldri": "never",
+    "Se etter oppdateringer nå": "Check for updates now",
+    "Versjon {} · sist sjekket: {}": "Version {} · last checked: {}",
+    "Sjekk": "Check",
+    "Kunne ikke se etter oppdateringer": "Could not check for updates",
+    "Vifte er oppdatert": "Vifte is up to date",
+    "Du har den nyeste versjonen ({}).": "You have the latest version ({}).",
+    "Vifte {} er tilgjengelig": "Vifte {} is available",
+    "Klikk for å se hva som er nytt og oppdatere.": "Click to see what's new and update.",
+    "Du har versjon {}.": "You have version {}.",
+    "Vifte kjører fra en kildekodemappe. Oppdater med «git pull» og kjør install.sh.":
+        "Vifte is running from a source folder. Update with “git pull” and run install.sh.",
+    "Hopp over denne versjonen": "Skip this version",
+    "Senere": "Later",
+    "Oppdater nå": "Update now",
+    "Åpne GitHub": "Open GitHub",
+    "Oppdaterer Vifte …": "Updating Vifte …",
+    "Laster ned versjon {} …": "Downloading version {} …",
+    "Vent …": "Please wait …",
+    "Oppdateringen feilet": "The update failed",
+    "Installerer … Godkjenn med passordet ditt.": "Installing … Confirm with your password.",
+    "Oppdateringen ble avbrutt": "The update was cancelled",
+    "Vifte er oppdatert til {}": "Vifte has been updated to {}",
+    "Programmet startes på nytt nå.": "The app will now restart.",
     # --- avinstallering
     "Avinstaller Vifte": "Uninstall Vifte",
     "Tjenesten stoppes og viftene gis tilbake til BIOS. Programmet, menyoppføringen og driveroppsettet fjernes.":
@@ -337,17 +366,28 @@ def _load_settings():
         return {}
 
 
+def get_setting(key, default=None):
+    """Brukerinnstillinger i ~/.config/vifte/settings.json (språk, oppdateringssjekk …)."""
+    return _load_settings().get(key, default)
+
+
+def set_setting(key, value):
+    s = _load_settings()
+    s[key] = value
+    os.makedirs(os.path.dirname(settings_path()), exist_ok=True)
+    tmp = settings_path() + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(s, f, indent=2)
+    os.replace(tmp, settings_path())
+
+
 def language_setting():
-    return _load_settings().get("language", "auto")
+    return get_setting("language", "auto")
 
 
 def set_language_setting(value):
     global _lang
-    s = _load_settings()
-    s["language"] = value
-    os.makedirs(os.path.dirname(settings_path()), exist_ok=True)
-    with open(settings_path(), "w") as f:
-        json.dump(s, f, indent=2)
+    set_setting("language", value)
     _lang = None
 
 

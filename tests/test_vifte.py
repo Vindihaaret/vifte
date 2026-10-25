@@ -415,6 +415,71 @@ class McpTests(unittest.TestCase):
                 self.assertIn(req, t["inputSchema"]["properties"])
 
 
+class UpdaterTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def make_tar(self, files, name="src.tar.gz"):
+        import tarfile
+        path = os.path.join(self.dir, name)
+        with tarfile.open(path, "w:gz") as tar:
+            for arc, data in files.items():
+                info = tarfile.TarInfo(arc)
+                raw = data.encode()
+                info.size = len(raw)
+                tar.addfile(info, io.BytesIO(raw))
+        return path
+
+    def test_versions(self):
+        from vifte import updater
+        self.assertEqual(updater.parse_version("v1.2.3"), (1, 2, 3))
+        self.assertEqual(updater.parse_version("1.2"), (1, 2, 0))
+        self.assertIsNone(updater.parse_version("latest"))
+        self.assertTrue(updater.is_newer("v1.0.10", "1.0.9"))
+        self.assertFalse(updater.is_newer("v1.0.1", "1.0.1"))
+        self.assertFalse(updater.is_newer("v0.9.0", "1.0.0"))
+        self.assertFalse(updater.is_newer("nonsense", "1.0.0"))
+
+    def test_monthly_schedule(self):
+        from vifte import updater
+        now = 1_800_000_000
+        self.assertTrue(updater.due(None, now))
+        self.assertFalse(updater.due(now - 29 * 86400, now))
+        self.assertTrue(updater.due(now - 31 * 86400, now))
+        self.assertFalse(updater.due(None, now, enabled=False))
+
+    def test_release_info_rejects_prereleases(self):
+        from vifte import updater
+        info = updater.release_info({"tag_name": "v1.2.0", "body": "x", "html_url": "u"})
+        self.assertEqual(info["version"], "1.2.0")
+        with self.assertRaises(ValueError):
+            updater.release_info({"tag_name": "v2.0.0", "prerelease": True})
+
+    def test_extract_accepts_matching_release(self):
+        from vifte import updater
+        tar = self.make_tar({"vifte-1.2.0/install.sh": "#!/bin/bash\n",
+                             "vifte-1.2.0/vifte/__init__.py": '__version__ = "1.2.0"\n'})
+        src = updater.extract(tar, os.path.join(self.dir, "out"), "v1.2.0")
+        self.assertTrue(os.path.isfile(os.path.join(src, "install.sh")))
+
+    def test_extract_rejects_path_traversal(self):
+        from vifte import updater
+        tar = self.make_tar({"vifte-1.2.0/install.sh": "", "../../evil.sh": "rm -rf /"})
+        with self.assertRaises(ValueError):
+            updater.extract(tar, os.path.join(self.dir, "out"), "v1.2.0")
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "evil.sh")))
+
+    def test_extract_rejects_wrong_version(self):
+        from vifte import updater
+        tar = self.make_tar({"vifte-1.2.0/install.sh": "",
+                             "vifte-1.2.0/vifte/__init__.py": '__version__ = "1.1.0"\n'})
+        with self.assertRaises(ValueError):
+            updater.extract(tar, os.path.join(self.dir, "out"), "v1.2.0")
+
+
 class TranslationTests(unittest.TestCase):
     def test_every_ui_string_has_english_translation(self):
         import ast

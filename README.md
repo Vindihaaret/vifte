@@ -195,6 +195,11 @@ shows which sensor triggered it.
 **Quit:** **Menu → Quit** (Ctrl+Q) closes the window and the tray icon. The service keeps controlling the
 fans. To hand the fans back to the BIOS, use **Menu → Pause control**.
 
+**Updates:** **Menu → Check for updates …** looks for a new release on GitHub. If there is one, you see
+what's new and can update with one click (you confirm with your password; the app restarts itself).
+Vifte also checks automatically once a month and shows a notification – this can be turned off under
+**Settings → Updates**. Only the public GitHub API is contacted; nothing about you or your system is sent.
+
 **Theme:** follows the system light/dark setting, or choose Light/Dark under **Settings → Theme**. The
 choice is stored in the same fields FanControl uses (`SyncThemeWithWindows`/`SelectedTheme`).
 

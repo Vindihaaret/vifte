@@ -12,12 +12,13 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from ..client import Client  # noqa: E402
 from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, FanControlConfig, curve_type,  # noqa: E402
                       custom_sensor_type, new_curve, new_custom_sensor, parse_point)
-from .. import i18n  # noqa: E402
+from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .common import Model, combo_row, spin_row, switch_row  # noqa: E402
 from .dialogs import ControlDialog, CurveDialog, CustomSensorDialog, RemapDialog, RenameDialog  # noqa: E402
 from .graph import CurveGraph  # noqa: E402
 from .tray import Tray  # noqa: E402
+from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
 APP_ID = "no.vifte.Vifte"
 UNINSTALLER = "/usr/local/bin/vifte-uninstall"
@@ -177,6 +178,7 @@ class MainWindow(Adw.ApplicationWindow):
         sec.append(_("Fahrenheit"), "win.fahrenheit")
         sec.append(_("Pause styring (BIOS overtar)"), "win.pause")
         sec.append(_("Innstillinger …"), "win.settings")
+        sec.append(_("Se etter oppdateringer …"), "win.check-update")
         sec.append(_("Om Vifte"), "win.about")
         menu.append_section(None, sec)
         sec = Gio.Menu()
@@ -196,6 +198,7 @@ class MainWindow(Adw.ApplicationWindow):
                          ("delete-config", self.delete_config), ("pair", self.pair),
                          ("remap", lambda: RemapDialog(self).present(self)), ("rescan", self.rescan),
                          ("settings", self.settings), ("about", self.about), ("uninstall", self.uninstall),
+                         ("check-update", lambda: self.get_application().updates.check(manual=True)),
                          ("quit", self.request_quit)):
             a = Gio.SimpleAction.new(name, None)
             a.connect("activate", lambda _a, _p, cb=cb: cb())
@@ -939,6 +942,7 @@ class MainWindow(Adw.ApplicationWindow):
             g.add(switch_row(_("Start i statusfeltet ved innlogging"), autostart_enabled(), set_autostart,
                              _("Viser ikonet i statusfeltet uten å åpne vinduet")))
         self.build_mcp_settings(page)
+        self.build_update_settings(page)
         g = Adw.PreferencesGroup(title=_("Tjeneste"))
         page.add(g)
         g.add(spin_row(_("Oppdateringsintervall (s)"), self.model.state.get("interval", 1.0), 0.25, 10, 0.25,
@@ -978,6 +982,22 @@ class MainWindow(Adw.ApplicationWindow):
             btn = Gtk.Button(label=_("Legg til"), valign=Gtk.Align.CENTER)
             btn.connect("clicked", lambda *_a: self.register_claude_code())
             row.add_suffix(btn)
+        g.add(row)
+
+    def build_update_settings(self, page):
+        from ..i18n import set_setting
+        g = Adw.PreferencesGroup(title=_("Oppdateringer"))
+        page.add(g)
+        g.add(switch_row(_("Se etter oppdateringer automatisk"), auto_enabled(),
+                         lambda v: set_setting("auto_update_check", v),
+                         _("Én gang i måneden, fra GitHub")))
+        ts = last_checked()
+        when = GLib.DateTime.new_from_unix_local(int(ts)).format("%x") if ts else _("aldri")
+        row = Adw.ActionRow(title=_("Se etter oppdateringer nå"),
+                            subtitle=_("Versjon {} · sist sjekket: {}").format(__version__, when))
+        btn = Gtk.Button(label=_("Sjekk"), valign=Gtk.Align.CENTER)
+        btn.connect("clicked", lambda *_a: self.get_application().updates.check(manual=True))
+        row.add_suffix(btn)
         g.add(row)
 
     def set_mcp_enabled(self, on):
@@ -1085,7 +1105,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.config_changed(False)
 
     def about(self):
-        from .. import __version__
         a = Adw.AboutDialog(application_name="Vifte", application_icon="no.vifte.Vifte",
                             developer_name="From Norway with Love ❤️",
                             developers=["Jan Ivar Sørensen"],
@@ -1116,6 +1135,8 @@ class App(Adw.Application):
         # ikonene følger med pakken, så de finnes også når programmet kjøres fra kildekoden
         Gtk.IconTheme.get_for_display(display).add_search_path(ICON_DIR)
         Gtk.Window.set_default_icon_name(APP_ID)
+        self.updates = UpdateManager(self)
+        self.updates.start_auto()
         try:
             self.tray = Tray(self.show_window, "no.vifte.Vifte-symbolic", ICON_DIR)
             self.hold()  # fortsett å kjøre i statusfeltet når vinduet lukkes

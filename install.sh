@@ -3,7 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+# Brukeren som startet installasjonen (via sudo eller pkexec, f.eks. ved oppdatering fra appen)
 USER_NAME="${SUDO_USER:-}"
+if [ -z "$USER_NAME" ] && [ -n "${PKEXEC_UID:-}" ]; then
+    USER_NAME="$(id -nu "$PKEXEC_UID" 2>/dev/null || true)"
+fi
 
 echo "==> Checking dependencies"
 deps_ok() {
