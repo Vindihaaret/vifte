@@ -6,7 +6,10 @@ følger systemspråket: norsk for nb/nn/no, ellers engelsk.
 import json
 import os
 
-LANGUAGES = [("auto", "Automatisk (systemspråk)"), ("nb", "Norsk"), ("en", "English")]
+LANGUAGES = [("auto", "Automatisk (systemspråk)"), ("nb", "Norsk"), ("en", "English"),
+             ("de", "Deutsch"), ("es", "Español"), ("fr", "Français")]
+CODES = {code for code, _label in LANGUAGES if code != "auto"}
+_OTHER = {}   # språkkode -> {engelsk tekst: oversettelse}, lastes ved behov
 
 EN = {
     # --- hovedvindu og meny
@@ -395,7 +398,10 @@ def system_language():
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         v = os.environ.get(var)
         if v and v not in ("C", "POSIX"):
-            return "nb" if v.split(":")[0][:2].lower() in ("nb", "nn", "no") else "en"
+            code = v.split(":")[0][:2].lower()
+            if code in ("nb", "nn", "no"):
+                return "nb"
+            return code if code in CODES else "en"
     return "en"
 
 
@@ -403,11 +409,25 @@ def current():
     global _lang
     if _lang is None:
         s = os.environ.get("VIFTE_LANG") or language_setting()
-        _lang = s if s in ("nb", "en") else system_language()
+        _lang = s if s in CODES else system_language()
     return _lang
 
 
+def _table(code):
+    if code not in _OTHER:
+        try:
+            mod = __import__(f"vifte.locales.{code}", fromlist=["T"])
+            _OTHER[code] = mod.T
+        except ImportError:
+            _OTHER[code] = {}
+    return _OTHER[code]
+
+
 def _(text):
-    if current() == "en":
-        return EN.get(text, text)
-    return text
+    lang = current()
+    if lang == "nb":
+        return text
+    en = EN.get(text, text)
+    if lang == "en":
+        return en
+    return _table(lang).get(en, en)

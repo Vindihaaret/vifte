@@ -18,7 +18,7 @@ etc.), so configurations can be moved between Windows and Linux.
 * **Claude integration (MCP)**: let Claude read your sensors and tune curves and fans for you – within
   hard safety limits enforced by Vifte.
 * **Emergency mode**: above a set CPU/GPU temperature every controlled fan runs at 100 %.
-* English and Norwegian user interface.
+* English, Norwegian, German, French and Spanish user interface.
 * No Wine, no .NET.
 
 *From Norway with Love ❤️*
@@ -203,8 +203,10 @@ Vifte also checks automatically once a month and shows a notification – this c
 **Theme:** follows the system light/dark setting, or choose Light/Dark under **Settings → Theme**. The
 choice is stored in the same fields FanControl uses (`SyncThemeWithWindows`/`SelectedTheme`).
 
-**Language:** English and Norwegian. The default follows the system language; change it under
-**Settings → Språk / Language**, or set `VIFTE_LANG=en` / `VIFTE_LANG=nb` for the command line.
+**Language:** English, Norwegian, German, French and Spanish. The default follows the system language;
+change it under **Settings → Språk / Language**, or set `VIFTE_LANG` (`en`, `nb`, `de`, `fr`, `es`) for
+the command line. Translations live in `vifte/locales/` (keyed by the English text) – contributions for
+more languages are welcome.
 
 ### Command line
 

@@ -481,6 +481,39 @@ class UpdaterTests(unittest.TestCase):
 
 
 class TranslationTests(unittest.TestCase):
+    def test_other_languages_are_complete_and_keep_placeholders(self):
+        from vifte import i18n
+        for code in sorted(i18n.CODES - {"nb", "en"}):
+            table = i18n._table(code)
+            self.assertTrue(table, f"no translations for {code}")
+            for en in i18n.EN.values():
+                with self.subTest(lang=code, text=en[:40]):
+                    self.assertIn(en, table)
+                    tr = table[en]
+                    self.assertEqual(tr.count("{}"), en.count("{}"))
+                    self.assertEqual(tr.count("\n"), en.count("\n"))
+            unused = set(table) - set(i18n.EN.values())
+            self.assertEqual(unused, set(), f"{code}: translations for texts that no longer exist")
+
+    def test_language_selection(self):
+        from vifte import i18n
+        old = dict(os.environ)
+        try:
+            for lang, expected in (("de_DE.UTF-8", "de"), ("fr_CA.UTF-8", "fr"), ("es_ES.UTF-8", "es"),
+                                   ("nb_NO.UTF-8", "nb"), ("it_IT.UTF-8", "en")):
+                for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES"):
+                    os.environ.pop(var, None)
+                os.environ["LANG"] = lang
+                self.assertEqual(i18n.system_language(), expected)
+            os.environ["VIFTE_LANG"] = "de"
+            i18n._lang = None
+            self.assertEqual(i18n._("Lagre"), "Speichern")
+            self.assertEqual(i18n._("Laget kurven «{}»").format("CPU"), "Kurve „CPU“ erstellt")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+            i18n._lang = None
+
     def test_every_ui_string_has_english_translation(self):
         import ast
         from vifte.i18n import EN
