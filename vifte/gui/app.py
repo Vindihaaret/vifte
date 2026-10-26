@@ -182,9 +182,6 @@ class MainWindow(Adw.ApplicationWindow):
         sec.append(_("Om Vifte"), "win.about")
         menu.append_section(None, sec)
         sec = Gio.Menu()
-        sec.append(_("Avinstaller Vifte …"), "win.uninstall")
-        menu.append_section(None, sec)
-        sec = Gio.Menu()
         sec.append(_("Avslutt"), "win.quit")
         menu.append_section(None, sec)
         mb = Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Meny"))
@@ -1008,6 +1005,18 @@ class MainWindow(Adw.ApplicationWindow):
                         self.theme_choice(), self.set_theme))
         g.add(switch_row(_("Skjul hastighetskort"), w.get("HideFanSpeedCards"),
                          lambda v: (w.__setitem__("HideFanSpeedCards", v), self.apply_view())))
+        # Avinstallering ligger nederst her (ikke i hovedmenyen), så det må være et aktivt valg.
+        if os.path.exists(UNINSTALLER):
+            g = Adw.PreferencesGroup()
+            page.add(g)
+            row = Adw.ActionRow(title=_("Avinstaller Vifte"),
+                                subtitle=_("Tjenesten stoppes og viftene gis tilbake til BIOS. Programmet, "
+                                           "menyoppføringen og driveroppsettet fjernes."))
+            btn = Gtk.Button(label=_("Avinstaller"), valign=Gtk.Align.CENTER)
+            btn.add_css_class("destructive-action")
+            btn.connect("clicked", lambda *_a: (dlg.close(), self.uninstall()))
+            row.add_suffix(btn)
+            g.add(row)
         self.apply_view()
         dlg.present(self)
 

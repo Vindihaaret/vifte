@@ -23,7 +23,6 @@ T = {
     "Settings …": "Ajustes …",
     "Settings": "Ajustes",
     "About Vifte": "Acerca de Vifte",
-    "Uninstall Vifte …": "Desinstalar Vifte …",
     "Cannot reach the vifted service ({}). Run: sudo systemctl enable --now vifted":
         "No se puede contactar con el servicio vifted ({}). Ejecute: sudo systemctl enable --now vifted",
     "Error: {}": "Error: {}",

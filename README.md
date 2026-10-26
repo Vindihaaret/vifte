@@ -67,7 +67,7 @@ Start **Vifte** from the application menu, or run `vifte`.
 
 ### Uninstall
 
-Choose **Menu → Uninstall Vifte …** in the app, or run `vifte uninstall` (or `sudo vifte-uninstall`).
+Open **Settings** in the app and click **Uninstall** at the bottom, or run `vifte uninstall` (or `sudo vifte-uninstall`).
 The service is stopped and the fans are handed back to the BIOS. The configurations in `/var/lib/vifte`
 are kept unless you tick the box in the dialog (or pass `--purge`).
 

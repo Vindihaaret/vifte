@@ -36,7 +36,6 @@ EN = {
     "Innstillinger …": "Settings …",
     "Innstillinger": "Settings",
     "Om Vifte": "About Vifte",
-    "Avinstaller Vifte …": "Uninstall Vifte …",
     "Får ikke kontakt med tjenesten vifted ({}). Kjør: sudo systemctl enable --now vifted":
         "Cannot reach the vifted service ({}). Run: sudo systemctl enable --now vifted",
     "Feil: {}": "Error: {}",
