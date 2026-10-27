@@ -214,7 +214,7 @@ the switch and the speed are under **Settings → Safety**.
 **AIO and other pumps:** Linux often exposes more fan headers than FanControl on Windows can control –
 including the pump header of an AIO or custom loop. Mark the pump so nothing else can touch it: click the
 gear on its card → **Pump and Claude → Type**:
-* **Pump – controlled by the pump or BIOS** (recommended, and right for pumps that regulate themselves):
+* **Pump – automatic** – the pump or BIOS controls it (recommended, and right for pumps that regulate themselves):
   Vifte never writes to the header, even if a configuration enables it.
 * **Pump – fixed speed**, for pumps that follow the PWM signal: a fixed speed of at least 70 %, and 100 %
   in emergency mode.

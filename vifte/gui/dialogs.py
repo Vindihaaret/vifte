@@ -145,12 +145,12 @@ class ControlDialog(LiveDialog):
             title=_("Pumpe og Claude"),
             description=_("En pumpe (AIO eller vannkjøling) styres aldri av kurver, kalibreres ikke og settes "
                           "aldri ned ved paring, og Claude kan ikke endre den. Dette gjelder maskinen, uansett "
-                          "hvilken konfigurasjon som er aktiv."))
+                          "hvilken konfigurasjon som er aktiv.") + "\n" +
+                        _("Automatisk: pumpen eller BIOS styrer selv. Velg dette hvis du er usikker."))
         page.add(g)
-        g.add(combo_row(_("Type"), [("fan", _("Vifte")), ("bios", _("Pumpe – styres av pumpen eller BIOS")),
+        g.add(combo_row(_("Type"), [("fan", _("Vifte")), ("bios", _("Pumpe – automatisk")),
                                     ("fixed", _("Pumpe – fast hastighet"))],
-                        pump.get("mode", "fan"), lambda v: self.set_pump(mode=v),
-                        subtitle=_("Er du usikker, velg «styres av pumpen eller BIOS»")))
+                        pump.get("mode", "fan"), lambda v: self.set_pump(mode=v)))
         self.pump_speed = spin_row(_("Pumpehastighet (%)"), pump.get("speed", 100), 70, 100, 5,
                                    lambda v: self.set_pump(speed=v),
                                    subtitle=_("Minst 70 %. I nødmodus går pumpen på 100 %."))
