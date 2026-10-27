@@ -334,6 +334,20 @@ class McpTests(unittest.TestCase):
         self.d.handle({"cmd": "settings", "mcp_enabled": False})
         self.assertFalse(self.d.engine.sensor_lost_enabled)
 
+    def test_new_configuration_is_only_written_when_saved(self):
+        start = self.d.settings["current"]
+        self.d.handle({"cmd": "new", "name": "Test"})
+        self.assertEqual(self.d.settings["current"], "Test.json")
+        self.assertFalse(os.path.exists(self.d.path("Test")))
+        self.assertIn("Test.json", self.d.handle({"cmd": "state"})["configs"])
+        self.d.handle({"cmd": "load", "name": start})            # «Forkast»: bytt uten å lagre
+        self.assertNotIn("Test.json", self.d.handle({"cmd": "state"})["configs"])
+        self.d.handle({"cmd": "new", "name": "Test"})
+        self.d.handle({"cmd": "save"})
+        self.assertTrue(os.path.exists(self.d.path("Test")))
+        with self.assertRaises(RuntimeError):
+            self.d.handle({"cmd": "new", "name": "Test"})
+
     def test_history_command_for_the_app(self):
         self.d._last_history = 0
         self.d.record_history()

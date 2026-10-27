@@ -155,7 +155,9 @@ class Daemon:
         os.replace(tmp, self.state_file)
 
     def list_configs(self):
-        return sorted(f for f in os.listdir(self.conf_dir) if f.lower().endswith(".json"))
+        # En ny konfigurasjon som ikke er lagret ennå, finnes bare i minnet, men vises likevel.
+        files = {f for f in os.listdir(self.conf_dir) if f.lower().endswith(".json")}
+        return sorted(files | {self.settings["current"]})
 
     def _add_hardware(self, cfg):
         """Ny maskinvare føres inn i konfigurasjonen, men ikke maskinvare som allerede
@@ -185,6 +187,30 @@ class Daemon:
         else:
             raise FileNotFoundError(name)
         changed = self._add_hardware(cfg)
+        self._activate(cfg, name)
+        with self.lock:
+            if not os.path.exists(p):
+                cfg.save(p)
+            elif changed:
+                self.dirty = True
+        self.save_settings()
+        log.info("konfigurasjon lastet: %s", name)
+
+    def new(self, name):
+        """Ny tom konfigurasjon. Den skrives ikke til disk før den lagres, så «Forkast» (bytte
+        til en annen uten å lagre) fjerner den helt."""
+        name = safe_name(name)
+        if os.path.exists(self.path(name)):
+            raise RuntimeError("det finnes allerede en konfigurasjon med det navnet")
+        cfg = FanControlConfig()
+        self._add_hardware(cfg)
+        self._activate(cfg, name)
+        with self.lock:
+            self.dirty = True
+        self.save_settings()
+        log.info("ny konfigurasjon (ikke lagret): %s", name)
+
+    def _activate(self, cfg, name):
         with self.lock:
             self.engine.release_all()
             self.undo_stack.clear()
@@ -194,12 +220,6 @@ class Daemon:
             self.settings["current"] = name
             self.rev += 1
             self.dirty = False
-            if not os.path.exists(p):
-                cfg.save(p)
-            elif changed:
-                self.dirty = True
-        self.save_settings()
-        log.info("konfigurasjon lastet: %s", name)
 
     def save(self, name=None):
         name = safe_name(name or self.settings["current"])
@@ -436,6 +456,9 @@ class Daemon:
         if cmd == "load":
             self.load(req["name"])
             return {"rev": self.rev}
+        if cmd == "new":
+            self.new(req["name"])
+            return {"rev": self.rev, "name": self.settings["current"]}
         if cmd == "import":
             name = safe_name(req["name"])
             cfg = FanControlConfig.loads(req["text"]) if "text" in req else FanControlConfig(req.get("raw"))

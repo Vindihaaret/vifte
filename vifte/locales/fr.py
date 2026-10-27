@@ -361,4 +361,5 @@ T = {
     "Could not open: {}": "Impossible d’ouvrir : {}",
     "Claude has access, so both are on and can't be turned off. The temperature and speed can still be adjusted.":
         "Claude a accès, les deux sont donc activés et ne peuvent pas être désactivés. La température et la vitesse restent réglables.",
+    "a configuration with that name already exists": "une configuration portant ce nom existe déjà",
 }

@@ -375,6 +375,7 @@ EN = {
     "Kunne ikke åpne: {}": "Could not open: {}",
     "Claude har tilgang, så begge er slått på og kan ikke slås av. Temperaturen og hastigheten kan fortsatt justeres.":
         "Claude has access, so both are on and can't be turned off. The temperature and speed can still be adjusted.",
+    "det finnes allerede en konfigurasjon med det navnet": "a configuration with that name already exists",
 }
 
 _lang = None

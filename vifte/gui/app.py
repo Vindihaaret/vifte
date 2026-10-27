@@ -11,7 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from ..client import Client  # noqa: E402
-from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, FanControlConfig, curve_type,  # noqa: E402
+from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # noqa: E402
                       custom_sensor_type, new_curve, new_custom_sensor, parse_point)
 from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
@@ -286,6 +286,8 @@ class MainWindow(Adw.ApplicationWindow):
                 m.fetch_config()
                 self.connected = True
                 self.rebuild()
+            elif m.state.get("configs") != getattr(self, "_configs_shown", None):
+                self.build_profiles()   # f.eks. etter sletting eller når en ulagret ny er forkastet
             if self.get_visible() and time.monotonic() - self._history_at >= 5:
                 self._history_at = time.monotonic()
                 m.history = m.client.call("history")
@@ -364,6 +366,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def build_profiles(self):
         m = self.model
+        self._configs_shown = m.state.get("configs")
         pop = Gtk.Popover()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=6, margin_bottom=6,
                       margin_start=6, margin_end=6)
@@ -1014,10 +1017,15 @@ class MainWindow(Adw.ApplicationWindow):
 
     def new_config(self):
         def make(name):
-            r = self.call("import", name=name, raw=FanControlConfig().raw)
-            if r:
+            if self.call("new", name=name) is not None:
                 self.poll()
-        RenameDialog.ask(self, _("Navn på ny konfigurasjon"), _("Ny"), make)
+
+        def ask():
+            RenameDialog.ask(self, _("Navn på ny konfigurasjon"), _("Ny"), make)
+        if self.model.state.get("dirty"):
+            self.confirm_discard(ask)
+        else:
+            ask()
 
     def save_as(self):
         def do(name):
