@@ -113,6 +113,9 @@ class Engine:
         self.sensor_lost_enabled = True
         self.sensor_lost_speed = 80.0
         self._lost_since = {}          # kontroll-id -> når sensoren forsvant
+        # Pumper (lokal kontroll-id -> {"mode": "bios"|"fixed", "speed": %}). Lagres på maskinen,
+        # ikke i konfigurasjonen, og går foran alt konfigurasjonen sier om utgangen.
+        self.pumps = {}
 
     def _index(self):
         self.by_id = {}
@@ -429,6 +432,20 @@ class Engine:
             if ctl is None:
                 continue
             state["read"] = ctl.value
+            pump = self.pumps.get(ctl.id)
+            state["pump"] = pump["mode"] if pump else None
+            if pump:
+                # Ingen kurver, kalibrering eller paring på en pumpe – bare BIOS eller fast hastighet.
+                state["lost"] = None
+                if pump["mode"] == "fixed" and not self.paused:
+                    v = 100.0 if self.failsafe_active else max(self.PUMP_MIN, float(pump.get("speed", 100)))
+                    self._apply(ctl, v, True)
+                    state["out"] = state["target"] = v
+                else:
+                    if ctl.taken:
+                        ctl.release()
+                    state["out"] = state["target"] = None
+                continue
             if self.failsafe_active and not self.paused and (ctl.id in self.override or ctl_cfg.get("Enable")):
                 self._apply(ctl, 100.0, True)
                 state["out"] = state["target"] = 100.0
@@ -490,6 +507,7 @@ class Engine:
 
     FAILSAFE_HYSTERESIS = 7.0
     SENSOR_LOST_AFTER = 5.0   # sekunder uten verdi før sensoren regnes som borte
+    PUMP_MIN = 70.0           # laveste faste hastighet for en pumpe
 
     def failsafe_sensors(self):
         """Kjernetemperaturer for CPU og GPU. NVMe, RAM o.l. er med vilje utelatt, og for

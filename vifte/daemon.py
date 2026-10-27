@@ -61,7 +61,8 @@ class Daemon:
         self.state_file = os.path.join(data_dir, "state.json")
         self.settings = {"current": "userConfig.json", "interval": 1.0, "aliases": {},
                          "mcp_enabled": False, "mcp_floor": 25, "failsafe_enabled": False,
-                         "failsafe_temp": 95, "sensor_lost_enabled": True, "sensor_lost_speed": 80}
+                         "failsafe_temp": 95, "sensor_lost_enabled": True, "sensor_lost_speed": 80,
+                         "pumps": {}, "claude_locked": []}
         try:
             with open(self.state_file) as f:
                 self.settings.update(json.load(f))
@@ -97,6 +98,25 @@ class Daemon:
         self.engine.failsafe_temp = st["failsafe_temp"]
         self.engine.sensor_lost_enabled = bool(st.get("sensor_lost_enabled", True)) or mcp
         self.engine.sensor_lost_speed = float(max(st["sensor_lost_speed"], st["mcp_floor"] if mcp else 0))
+        pumps = {}
+        for ident, p in (st.get("pumps") or {}).items():
+            if isinstance(p, dict) and p.get("mode") in ("bios", "fixed"):
+                pumps[ident] = {"mode": p["mode"],
+                                "speed": int(max(Engine.PUMP_MIN, min(100, float(p.get("speed", 100)))))}
+        st["pumps"] = pumps
+        st["claude_locked"] = sorted({str(i) for i in st.get("claude_locked") or []})
+        self.engine.pumps = pumps
+
+    def local_control(self, ident):
+        """Lokal id for en kontroll i konfigurasjonen (pumper og låser gjelder maskinen)."""
+        c = self.engine.resolve(ident)
+        if c is None or c.kind != "control":
+            raise RuntimeError("fant ikke kontrollen på denne maskinen")
+        return c.id
+
+    def protected_for_claude(self):
+        """Kontroller Claude ikke får endre: alle pumper og de brukeren har låst."""
+        return set(self.settings.get("pumps") or {}) | set(self.settings.get("claude_locked") or [])
 
     def safety(self):
         st = self.settings
@@ -105,7 +125,8 @@ class Daemon:
                 "failsafe_effective": self.engine.failsafe_enabled, "failsafe_temp": st["failsafe_temp"],
                 "sensor_lost_enabled": bool(st.get("sensor_lost_enabled", True)),
                 "sensor_lost_effective": self.engine.sensor_lost_enabled,
-                "sensor_lost_speed": st["sensor_lost_speed"]}
+                "sensor_lost_speed": st["sensor_lost_speed"],
+                "pumps": st["pumps"], "claude_locked": st["claude_locked"]}
 
     def log_mcp(self, template, *args):
         self._mcp_log_id += 1
@@ -307,6 +328,8 @@ class Daemon:
         fan = e.resolve(paired) if paired else None
         if not ctl or not fan:
             raise RuntimeError("kontrollen må være paret med en hastighetssensor først")
+        if ctl.id in e.pumps:
+            raise RuntimeError("en pumpe kan ikke kalibreres")
         steps = [p for p in (100, 90, 80, 70, 60, 50, 40, 30, 20, 10) if p >= min_percent]
         if min_percent and min_percent not in steps:
             steps.append(min_percent)
@@ -378,11 +401,12 @@ class Daemon:
             self.dirty = True
         return {"start": start, "stop": stop}
 
-    def pair(self, task, min_percent=0):
+    def pair(self, task, min_percent=0, exclude=()):
+        """Pumper (og det som står i exclude) holdes helt utenfor – de settes aldri ned."""
         e = self.engine
         level = max(40, min_percent)
         fans = [s for s in e.sensors if s.kind == "fan"]
-        controls = list(e.controls)
+        controls = [c for c in e.controls if c.id not in e.pumps and c.id not in exclude]
         result = {}
         self._say(task, "Setter alle vifter til {} % …", level)
         with self.lock:
@@ -511,6 +535,27 @@ class Daemon:
                     if ids is None or k in ids:
                         series.setdefault(k, [None] * len(rows))[i] = v
             return {"t": [r["t"] for r in rows], "series": series}
+        if cmd == "set_pump":
+            with self.lock:
+                lid = self.local_control(req["id"])
+                pumps = dict(self.settings.get("pumps") or {})
+                if req.get("mode") in ("bios", "fixed"):
+                    pumps[lid] = {"mode": req["mode"], "speed": req.get("speed", (pumps.get(lid) or {}).get("speed", 100))}
+                else:
+                    pumps.pop(lid, None)
+                self.settings["pumps"] = pumps
+                self.apply_safety()
+            self.save_settings()
+            return {"safety": self.safety()}
+        if cmd == "set_claude_lock":
+            with self.lock:
+                lid = self.local_control(req["id"])
+                locked = set(self.settings.get("claude_locked") or [])
+                (locked.add if req.get("locked") else locked.discard)(lid)
+                self.settings["claude_locked"] = sorted(locked)
+                self.apply_safety()
+            self.save_settings()
+            return {"safety": self.safety()}
         if cmd == "mcp_tools":
             return {"tools": self.mcp.tools()}
         if cmd == "mcp_call":

@@ -140,6 +140,8 @@ however Claude connects:
   temperature*. Hysteresis and response times are capped so fans react quickly to heat.
 * **Emergency mode is always on** while Claude has access: if a CPU or GPU core temperature reaches the
   emergency temperature (default 95 °C), every controlled fan runs at 100 % until it has cooled 7 °C.
+* **Pumps and locked fans are off limits.** Claude can read them, but can't change, calibrate or pair a
+  control marked as a pump or locked by you – nor the curves and sensors it uses.
 * **Sensor loss protection is always on** while Claude has access, and never below the lowest fan speed:
   if a curve's sensor stops responding, its fans run at the chosen speed until it is back.
 * **Limited reach.** Claude can't delete or import configurations, overwrite an existing configuration,
@@ -208,6 +210,19 @@ the NVIDIA driver fails or a hwmon driver is unloaded), the fans using that curv
 resumes as soon as the sensor is back. A mix sensor counts as lost if any of its sensors is missing, since
 the missing one could be the hottest. Fans whose sensor never worked are left to the BIOS. On by default;
 the switch and the speed are under **Settings → Safety**.
+
+**AIO and other pumps:** Linux often exposes more fan headers than FanControl on Windows can control –
+including the pump header of an AIO or custom loop. Mark the pump so nothing else can touch it: click the
+gear on its card → **Pump and Claude → Type**:
+* **Pump – controlled by the pump or BIOS** (recommended, and right for pumps that regulate themselves):
+  Vifte never writes to the header, even if a configuration enables it.
+* **Pump – fixed speed**, for pumps that follow the PWM signal: a fixed speed of at least 70 %, and 100 %
+  in emergency mode.
+
+A pump is never driven by curves, never calibrated, never turned down by automatic pairing, and Claude
+can't change it. The marking belongs to the machine (stored in `/var/lib/vifte/state.json`), so it
+applies whichever configuration is active. Under the same gear you can also lock any fan so Claude can't
+change it (**Claude can't change this**).
 
 **Alerts:** optional desktop notifications, turned on under **Settings → Safety → Alerts**. Add one or more
 sensors with a limit below the emergency temperature; you get a notification when a sensor has stayed
@@ -280,7 +295,7 @@ vifte uninstall [--purge]  uninstall (--purge also deletes the configurations)
 | Path | Contents |
 |---|---|
 | `/var/lib/vifte/Configurations/*.json` | the configurations (FanControl format) |
-| `/var/lib/vifte/state.json` | active configuration, update interval, sensor mappings and safety settings |
+| `/var/lib/vifte/state.json` | active configuration, update interval, sensor mappings, safety settings, pumps and Claude locks |
 | `/var/lib/vifte/sensors/` | default folder for file sensors |
 | `/run/vifte/vifte.sock` | socket between the GUI and the service |
 | `/var/lib/vifte/Configurations/backups/` | backups made before Claude saves |

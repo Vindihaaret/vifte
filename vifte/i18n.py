@@ -376,6 +376,21 @@ EN = {
     "Claude har tilgang, så begge er slått på og kan ikke slås av. Temperaturen og hastigheten kan fortsatt justeres.":
         "Claude has access, so both are on and can't be turned off. The temperature and speed can still be adjusted.",
     "det finnes allerede en konfigurasjon med det navnet": "a configuration with that name already exists",
+    "PUMPE": "PUMP",
+    "Pumpe – endres under tannhjulet": "Pump – change it under the gear",
+    "Pumpehastighet (%)": "Pump speed (%)",
+    "Claude kan ikke endre denne": "Claude can't change this",
+    "Claude kan fortsatt lese verdiene": "Claude can still read the values",
+    "Pumpe og Claude": "Pump and Claude",
+    "En pumpe (AIO eller vannkjøling) styres aldri av kurver, kalibreres ikke og settes aldri ned ved paring, og Claude kan ikke endre den. Dette gjelder maskinen, uansett hvilken konfigurasjon som er aktiv.": "A pump (AIO or custom loop) is never driven by curves, never calibrated and never turned down during pairing, and Claude can't change it. This applies to the machine, whichever configuration is active.",
+    "Type": "Type",
+    "Minst 70 %. I nødmodus går pumpen på 100 %.": "At least 70 %. In emergency mode the pump runs at 100 %.",
+    "Er du usikker, velg «styres av pumpen eller BIOS»": "If unsure, choose “controlled by the pump or BIOS”",
+    "Vifte": "Fan",
+    "Pumpe – styres av pumpen eller BIOS": "Pump – controlled by the pump or BIOS",
+    "Pumpe – fast hastighet": "Pump – fixed speed",
+    "fant ikke kontrollen på denne maskinen": "the control was not found on this machine",
+    "en pumpe kan ikke kalibreres": "a pump can't be calibrated",
 }
 
 _lang = None

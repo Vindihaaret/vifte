@@ -481,8 +481,16 @@ class MainWindow(Adw.ApplicationWindow):
                 big.set_label("–")
                 level.set_value(0)
             r = st.get("rpm")
+            pump = st.get("pump")
             rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None and local else ""))
-            manual.set_label(_("MANUELL") if ent.get("ManualControl") and ent.get("Enable") else "")
+            if pump:
+                manual.set_label(_("PUMPE"))
+            else:
+                manual.set_label(_("MANUELL") if ent.get("ManualControl") and ent.get("Enable") else "")
+            # En pumpe styres fra maskininnstillingen (tannhjulet), ikke av kurven her.
+            sw.set_sensitive(not pump)
+            dd.set_sensitive(not pump)
+            sw.set_tooltip_text(_("Pumpe – endres under tannhjulet") if pump else _("Aktiver styring"))
         self.updaters.append(update)
         return card
 

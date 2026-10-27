@@ -15,6 +15,7 @@ uansett hvem som kobler til. Prinsippene:
 * Alle endringer kan angres (undo), og lagring tar alltid en sikkerhetskopi først.
 """
 import copy
+import json
 import os
 import time
 
@@ -177,6 +178,7 @@ class McpApi:
             before = copy.deepcopy(d.engine.cfg.raw)
             work = FanControlConfig(copy.deepcopy(before))
             result = fn(work)
+            self.check_protected(FanControlConfig(before), work)
             d.commit_config(work)
             # Angre er bare trygt så lenge ingen andre har endret konfigurasjonen etterpå.
             d.undo_stack.append((before, d.rev))
@@ -196,6 +198,67 @@ class McpApi:
         if len(hits) > 1:
             raise McpError(f"'{key}' matches several controls – use the id")
         raise McpError(f"no control '{key}' – see get_status")
+
+    # ------------------------------------------------------------------ beskyttede kontroller
+    def _protected_entries(self, cfg, include_pumps=True):
+        """{lokal id: kontrolloppføring} for pumper og kontroller brukeren har låst for Claude."""
+        protected = self.d.protected_for_claude() if include_pumps else set(self.d.settings.get("claude_locked") or [])
+        out = {}
+        for c in cfg.controls:
+            local = self.d.engine.resolve(c.get("Identifier"))
+            if local is not None and local.id in protected:
+                out[local.id] = c
+        return out
+
+    def _footprint(self, cfg, entry):
+        """Alt som bestemmer hva en kontroll gjør: oppføringen, kurvene den bruker (også via mix og
+        sync) og de egendefinerte sensorene bak dem."""
+        seen_curves, seen_sensors, parts = set(), set(), [entry]
+
+        def sensor(ref, depth=0):
+            ident = (ref or {}).get("Identifier") if isinstance(ref, dict) else ref
+            if not ident or ident in seen_sensors or depth > 8:
+                return
+            seen_sensors.add(ident)
+            cs = next((x for x in cfg.custom_sensors if x.get("Identifier") == ident), None)
+            if cs:
+                parts.append(cs)
+                for sub in cs.get("SelectedSensors") or []:
+                    sensor(sub, depth + 1)
+                sensor(cs.get("SelectedTempSource"), depth + 1)
+
+        def curve(ref, depth=0):
+            name = (ref or {}).get("Name") if isinstance(ref, dict) else ref
+            if not name or name in seen_curves or depth > 8:
+                return
+            seen_curves.add(name)
+            c = cfg.curve(name)
+            parts.append(c)
+            if not c:
+                return
+            for sub in c.get("SelectedFanCurves") or []:
+                curve(sub, depth + 1)
+            sensor(c.get("SelectedTempSource"))
+            sync = (c.get("SelectedControl") or {}).get("Identifier")
+            if sync:
+                other = cfg.control(sync)
+                if other:
+                    curve(other.get("SelectedFanCurve"), depth + 1)
+        curve(entry.get("SelectedFanCurve"))
+        return json.dumps(parts, sort_keys=True, default=str)
+
+    def check_protected(self, before, after, include_pumps=True):
+        """Avvis enhver endring som påvirker en pumpe eller en låst kontroll – direkte eller
+        indirekte via en kurve eller sensor den bruker."""
+        old = self._protected_entries(before, include_pumps)
+        new = self._protected_entries(after, include_pumps)
+        for lid, entry in old.items():
+            other = new.get(lid)
+            if other is None or self._footprint(before, entry) != self._footprint(after, other):
+                label = entry.get("NickName") or entry.get("Name") or entry.get("Identifier")
+                kind = "a pump" if lid in (self.d.settings.get("pumps") or {}) else "locked by the user"
+                raise McpError(f"'{label}' is {kind} – Claude can't change it, or the curves and sensors "
+                               "it uses. Ask the user to change it in the Vifte app.")
 
     def _curve(self, cfg, name):
         c = cfg.curve(name)
@@ -401,6 +464,8 @@ class McpApi:
                     "start": c.get("SelectedStart", 0), "stop": c.get("SelectedStop", 0),
                     "step_up": c.get("SelectedCommandStepUp"), "step_down": c.get("SelectedCommandStepDown"),
                     "calibrated": bool(c.get("Calibration")),
+                    "pump": self._pump_mode(ident),
+                    "claude_can_change": not self._is_protected(ident),
                     "meets_safety_rules": self._ok(lambda c=c: self.check_control(cfg, c)),
                 })
             curves = []
@@ -427,6 +492,14 @@ class McpApi:
                 "controls": controls, "curves": curves, "temperatures": temps, "fans": fans,
                 "custom_sensors": custom, "missing_hardware": snap["missing"],
             }
+
+    def _pump_mode(self, ident):
+        local = self.d.engine.resolve(ident)
+        return ((self.d.settings.get("pumps") or {}).get(local.id) or {}).get("mode") if local else None
+
+    def _is_protected(self, ident):
+        local = self.d.engine.resolve(ident)
+        return bool(local) and local.id in self.d.protected_for_claude()
 
     @staticmethod
     def _ok(fn):
@@ -674,12 +747,15 @@ class McpApi:
 
     # ------------------------------------------------------------------ oppgaver
     def t_pair_fans(self):
-        self.d._start_task("pair", self.d.pair, self.floor)
+        self.d._start_task("pair", self.d.pair, self.floor, self.d.protected_for_claude())
         self.d.log_mcp("Startet paring av vifter")
         return {"started": True, "hint": "poll get_task every ~15 s"}
 
     def t_calibrate_control(self, control):
         c = self._control_entry(self.d.engine.cfg, control)
+        local = self.d.engine.resolve(c.get("Identifier"))
+        if local is not None and local.id in self.d.protected_for_claude():
+            raise McpError("this control is a pump or locked by the user – Claude can't calibrate it")
         self.d._start_task("calibrate", self.d.calibrate, c.get("Identifier"), self.floor)
         self.d.log_mcp("Startet kalibrering av «{}»", c.get("NickName") or c.get("Identifier"))
         return {"started": True, "hint": "poll get_task every ~15 s"}
@@ -701,6 +777,11 @@ class McpApi:
             raise McpError(f"no configuration '{name}'")
         if self.d.dirty:
             raise McpError("the active configuration has unsaved changes – save or undo first")
+        # Pumper følger maskinen og påvirkes ikke av konfigurasjonen; låste vifter må være like.
+        target = FanControlConfig.load(self.d.path(name))
+        self.d._add_hardware(target)
+        with self.d.lock:
+            self.check_protected(self.d.engine.cfg, target, include_pumps=False)
         self.d.load(name)
         self.d.log_mcp("Byttet til konfigurasjonen «{}»", name)
         return {"active": self.d.settings["current"]}
@@ -745,6 +826,7 @@ class McpApi:
                 d.undo_stack.clear()
                 raise McpError("the configuration has been changed in the Vifte app since then – "
                                "undo is no longer possible")
+            self.check_protected(d.engine.cfg, FanControlConfig(before), include_pumps=False)
             d.undo_stack.pop()
             d.commit_config(FanControlConfig(before))
             if d.undo_stack:

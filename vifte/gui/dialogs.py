@@ -64,18 +64,26 @@ class ControlDialog(LiveDialog):
         page = Adw.PreferencesPage()
         self.add(page)
 
+        self.fan_only = []   # alt som ikke gjelder en pumpe
         g = Adw.PreferencesGroup(title=_("Generelt"), description=self.ident)
         page.add(g)
         g.add(entry_row(_("Navn"), e.get("NickName") or e.get("Name"), lambda v: self.set("NickName", v)))
-        g.add(switch_row(_("Aktivert"), e.get("Enable"), lambda v: self.set("Enable", v),
-                         _("Når av, styrer BIOS/driveren viften selv")))
+        row = switch_row(_("Aktivert"), e.get("Enable"), lambda v: self.set("Enable", v),
+                         _("Når av, styrer BIOS/driveren viften selv"))
+        g.add(row)
+        self.fan_only.append(row)
         curves = [(c.get("Name"), f"{c.get('Name')} ({_(CURVE_TITLES[curve_type(c)])})") for c in cfg.curves]
-        g.add(combo_row(_("Kurve"), curves, (e.get("SelectedFanCurve") or {}).get("Name"),
+        row = combo_row(_("Kurve"), curves, (e.get("SelectedFanCurve") or {}).get("Name"),
                         lambda n: self.set("SelectedFanCurve", cfg.make_curve_ref(n) if n else None),
-                        none_label="(ingen)"))
+                        none_label="(ingen)")
+        g.add(row)
+        self.fan_only.append(row)
         g.add(switch_row(_("Skjult"), e.get("IsHidden"), lambda v: self.set("IsHidden", v)))
 
+        self.build_pump(page)
+
         g = Adw.PreferencesGroup(title=_("Manuell styring"))
+        self.fan_only.append(g)
         page.add(g)
         g.add(switch_row(_("Manuell styring"), e.get("ManualControl"), lambda v: self.set("ManualControl", v),
                          _("Overstyrer kurven med en fast verdi")))
@@ -83,6 +91,7 @@ class ControlDialog(LiveDialog):
                        lambda v: self.set("ManualControlValue", v, False)))
 
         g = Adw.PreferencesGroup(title=_("Justering"))
+        self.fan_only.append(g)
         page.add(g)
         g.add(spin_row(_("Forskyvning (offset) %"), e.get("SelectedOffset", 0), -100, 100, 1,
                        lambda v: self.set("SelectedOffset", v, False), subtitle=_("Legges til kurvens verdi")))
@@ -114,12 +123,73 @@ class ControlDialog(LiveDialog):
         btn.connect("clicked", self.calibrate)
         row.add_suffix(btn)
         g.add(row)
+        self.fan_only.append(row)
         self.calib = CurveGraph(editable=False, height=200)
         self.calib.y_unit = " RPM"
         self.calib.x_unit = "%"
         self.calib.x_range = (0, 100)
         g.add(self.calib)
         self.update_calibration()
+        self.update_pump()
+
+    # ---- pumpe og Claude-lås (lagres på maskinen, ikke i konfigurasjonen)
+    def safety(self):
+        return self.model.state.get("safety") or {}
+
+    def local(self):
+        return self.model.local_id(self.ident)
+
+    def build_pump(self, page):
+        pump = (self.safety().get("pumps") or {}).get(self.local()) or {}
+        g = Adw.PreferencesGroup(
+            title=_("Pumpe og Claude"),
+            description=_("En pumpe (AIO eller vannkjøling) styres aldri av kurver, kalibreres ikke og settes "
+                          "aldri ned ved paring, og Claude kan ikke endre den. Dette gjelder maskinen, uansett "
+                          "hvilken konfigurasjon som er aktiv."))
+        page.add(g)
+        g.add(combo_row(_("Type"), [("fan", _("Vifte")), ("bios", _("Pumpe – styres av pumpen eller BIOS")),
+                                    ("fixed", _("Pumpe – fast hastighet"))],
+                        pump.get("mode", "fan"), lambda v: self.set_pump(mode=v),
+                        subtitle=_("Er du usikker, velg «styres av pumpen eller BIOS»")))
+        self.pump_speed = spin_row(_("Pumpehastighet (%)"), pump.get("speed", 100), 70, 100, 5,
+                                   lambda v: self.set_pump(speed=v),
+                                   subtitle=_("Minst 70 %. I nødmodus går pumpen på 100 %."))
+        g.add(self.pump_speed)
+        locked = self.local() in (self.safety().get("claude_locked") or [])
+        self._syncing = False
+        self.lock_row = switch_row(_("Claude kan ikke endre denne"), locked,
+                                   lambda v: self._syncing or self.call("set_claude_lock", id=self.ident, locked=v),
+                                   _("Claude kan fortsatt lese verdiene"))
+        g.add(self.lock_row)
+
+    def call(self, cmd, **kw):
+        try:
+            r = self.model.client.call(cmd, **kw)
+        except Exception as ex:
+            self.win.toast(_("Feil: {}").format(_(str(ex))))
+            return None
+        self.model.state["safety"] = r.get("safety") or self.model.state.get("safety")
+        self.update_pump()
+        return r
+
+    def set_pump(self, mode=None, speed=None):
+        cur = (self.safety().get("pumps") or {}).get(self.local()) or {}
+        mode = mode or cur.get("mode", "fan")
+        self.call("set_pump", id=self.ident, mode=None if mode == "fan" else mode,
+                  speed=speed if speed is not None else int(self.pump_speed.get_value()))
+
+    def update_pump(self):
+        pump = (self.safety().get("pumps") or {}).get(self.local())
+        mode = pump["mode"] if pump else None
+        self.pump_speed.set_visible(mode == "fixed")
+        for w in self.fan_only:
+            w.set_sensitive(mode is None)
+        # en pumpe er alltid låst for Claude
+        locked = bool(pump) or self.local() in (self.safety().get("claude_locked") or [])
+        self._syncing = True
+        self.lock_row.set_active(locked)
+        self._syncing = False
+        self.lock_row.set_sensitive(not pump)
 
     def update_calibration(self):
         cal = calibration_points(self.entry().get("Calibration"))

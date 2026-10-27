@@ -288,6 +288,36 @@ class SensorLostTests(unittest.TestCase):
         self.assertEqual(self.tick(10), 100)
 
 
+class PumpEngineTests(unittest.TestCase):
+    def setUp(self):
+        EngineTests.setUp(self)
+        self.fake.temps[CPU] = 50
+
+    def test_bios_pump_is_never_touched_even_if_the_configuration_enables_it(self):
+        self.e.pumps = {FAN0: {"mode": "bios", "speed": 100}}
+        self.e.failsafe_enabled, self.e.failsafe_temp = True, 90
+        self.fake.temps[GPU] = 95                       # nødmodus
+        self.e.tick()
+        self.assertEqual(self.fake.backends[FAN0].writes, [])
+        self.assertEqual(self.e.control_state[FAN0]["pump"], "bios")
+
+    def test_marking_a_running_fan_as_pump_hands_it_back(self):
+        self.e.tick()
+        self.assertTrue(self.e.controls[0].taken)
+        self.e.pumps = {FAN0: {"mode": "bios"}}
+        self.e.tick()
+        self.assertFalse(self.e.controls[0].taken)
+
+    def test_fixed_pump_never_below_70_and_100_in_emergency(self):
+        self.e.pumps = {FAN0: {"mode": "fixed", "speed": 20}}
+        self.e.tick()
+        self.assertEqual(self.fake.backends[FAN0].value, 70)
+        self.e.failsafe_enabled, self.e.failsafe_temp = True, 90
+        self.fake.temps[GPU] = 95
+        self.e.tick()
+        self.assertEqual(self.fake.backends[FAN0].value, 100)
+
+
 # ====================================================================== MCP / sikkerhet
 
 class McpTests(unittest.TestCase):
@@ -497,6 +527,64 @@ class McpTests(unittest.TestCase):
         self.assertTrue(seen)
         self.assertGreaterEqual(min(seen), 25)
         del orig
+
+    def test_pump_setting_is_stored_and_clamped(self):
+        self.d.handle({"cmd": "set_pump", "id": FAN1, "mode": "fixed", "speed": 10})
+        self.assertEqual(self.d.engine.pumps[FAN1], {"mode": "fixed", "speed": 70})
+        d2 = Daemon(self.dir, dry_run=True, engine=make_engine()[0])
+        self.assertEqual(d2.engine.pumps[FAN1]["mode"], "fixed", "survives a restart")
+        self.d.handle({"cmd": "set_pump", "id": FAN1, "mode": None})
+        self.assertEqual(self.d.engine.pumps, {})
+
+    def test_pump_is_never_calibrated_or_paired(self):
+        self.d.handle({"cmd": "set_pump", "id": FAN1, "mode": "bios"})
+        self.d._wait = lambda t, s: None
+        self.d._rpm = lambda s, t, n=3: 500.0
+        cfg = self.d.engine.cfg.copy()
+        cfg.control(FAN1)["PairedFanSensor"] = {"Identifier": "/lpc/nct6798d/fan/1"}
+        self.d.handle({"cmd": "apply_config", "raw": cfg.raw})
+        with self.assertRaises(RuntimeError):
+            self.d.calibrate({"cancel": False}, FAN1)
+        touched = set()
+
+        class Spy(dict):
+            def __setitem__(s, k, v):
+                touched.add(k)
+                dict.__setitem__(s, k, v)
+        self.d.engine.override = Spy()
+        self.d.pair({"cancel": False})
+        self.assertIn(FAN0, touched)
+        self.assertNotIn(FAN1, touched)
+
+    def test_claude_cannot_change_a_pump(self):
+        self.good_curve()
+        self.d.handle({"cmd": "set_pump", "id": FAN1, "mode": "bios"})
+        msg = self.rejected("configure_control", control=FAN1, curve="CPU")
+        self.assertIn("pump", msg)
+        self.rejected("configure_control", control=FAN1, name="Pump?")
+        self.rejected("calibrate_control", control=FAN1)
+        status = {c["id"]: c for c in self.call("get_status")["controls"]}
+        self.assertEqual(status[FAN1]["pump"], "bios")
+        self.assertFalse(status[FAN1]["claude_can_change"])
+        self.assertTrue(status[FAN0]["claude_can_change"])
+
+    def test_locked_fan_and_the_curves_it_uses_are_off_limits(self):
+        self.good_curve("CPU")
+        self.good_curve("Other")
+        self.call("create_curve", name="Mix", type="mix", curves=["CPU", "Other"], function="max")
+        self.call("configure_control", control=FAN0, curve="Mix")
+        self.d.handle({"cmd": "set_claude_lock", "id": FAN0, "locked": True})
+        self.assertIn("locked", self.rejected("configure_control", control=FAN0, offset=5))
+        # indirekte: CPU-kurven inngår i mix-kurven den låste viften bruker
+        self.rejected("update_curve", name="CPU", points=[[40, 35], [60, 60], [85, 100]])
+        self.rejected("update_curve", name="Mix", function="average")
+        # en kurve den låste viften ikke bruker, kan fortsatt endres
+        self.call("create_curve", name="Free", type="graph", temperature_source=CPU,
+                  points=[[40, 30], [60, 55], [85, 100]])
+        self.call("update_curve", name="Free", points=[[40, 35], [60, 55], [85, 100]])
+        self.call("configure_control", control=FAN1, curve="Free")
+        self.d.handle({"cmd": "set_claude_lock", "id": FAN0, "locked": False})
+        self.call("configure_control", control=FAN0, offset=5)
 
     def test_mcp_cannot_reach_dangerous_commands(self):
         for name in ("delete", "uninstall", "settings", "apply_config", "import", "pause"):
