@@ -209,7 +209,7 @@ EN = {
     "Skjult": "Hidden",
     "Manuell styring": "Manual control",
     "Overstyrer kurven med en fast verdi": "Overrides the curve with a fixed value",
-    "Manuell verdi": "Manual value",
+    "Manuell verdi (%)": "Manual value (%)",
     "Justering": "Adjustment",
     "Forskyvning (offset) %": "Offset %",
     "Legges til kurvens verdi": "Added to the curve's value",

@@ -79,7 +79,7 @@ class ControlDialog(LiveDialog):
         page.add(g)
         g.add(switch_row(_("Manuell styring"), e.get("ManualControl"), lambda v: self.set("ManualControl", v),
                          _("Overstyrer kurven med en fast verdi")))
-        g.add(spin_row(_("Manuell verdi"), e.get("ManualControlValue", 50), 0, 100, 1,
+        g.add(spin_row(_("Manuell verdi (%)"), e.get("ManualControlValue", 50), 0, 100, 1,
                        lambda v: self.set("ManualControlValue", v, False)))
 
         g = Adw.PreferencesGroup(title=_("Justering"))

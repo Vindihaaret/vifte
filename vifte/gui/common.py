@@ -3,7 +3,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from ..config import FanControlConfig  # noqa: E402
 from ..i18n import _  # noqa: E402
@@ -119,6 +119,18 @@ def spin_row(title, value, lo, hi, step, on_change, digits=0, subtitle=None):
     row = Adw.SpinRow(title=title, adjustment=adj, digits=digits)
     if subtitle:
         row.set_subtitle(subtitle)
+
+    def clamp_typing(r):
+        # Spinnfeltet retter først verdien når feltet forlates; vis maks med én gang i stedet
+        # for at f.eks. 150 % står der mens man skriver. (Bare øvre grense: et tall under
+        # minimum kan være starten på et gyldig tall.)
+        try:
+            v = float(r.get_text().replace(",", ".").strip())
+        except ValueError:
+            return
+        if v > hi:
+            GLib.idle_add(lambda: (r.set_value(hi), r.set_text(r.get_text()))[-1] and False)
+    row.connect("changed", clamp_typing)
     row.connect("notify::value", lambda r, _p: on_change(
         round(r.get_value(), digits) if digits else int(round(r.get_value()))))
     return row

@@ -186,7 +186,7 @@ T = {
     "Hidden": "Masqué",
     "Manual control": "Contrôle manuel",
     "Overrides the curve with a fixed value": "Remplace la courbe par une valeur fixe",
-    "Manual value": "Valeur manuelle",
+    "Manual value (%)": "Valeur manuelle (%)",
     "Adjustment": "Réglages",
     "Offset %": "Décalage %",
     "Added to the curve's value": "Ajouté à la valeur de la courbe",
