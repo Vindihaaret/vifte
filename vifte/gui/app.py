@@ -1149,20 +1149,39 @@ class MainWindow(Adw.ApplicationWindow):
 
     def build_safety_settings(self, page):
         safety = self.model.state.get("safety") or {}
-        g = Adw.PreferencesGroup(title=_("Viftevern"),
-                                 description=_("Begge er alltid på mens Claude-tilgang er slått på."))
+        g = Adw.PreferencesGroup(title=_("Viftevern"))
         page.add(g)
-        g.add(switch_row(_("Nødmodus"), safety.get("failsafe_enabled"),
-                         lambda v: self.call("settings", failsafe_enabled=v),
-                         _("Når CPU eller GPU når nødtemperaturen, går alle styrte vifter på 100 %")))
+        syncing = [False]   # ikke send endringer når bryterne oppdateres herfra
+
+        def setter(key):
+            return lambda v: syncing[0] or self.call("settings", **{key: v})
+        failsafe = switch_row(_("Nødmodus"), False, setter("failsafe_enabled"),
+                              _("Når CPU eller GPU når nødtemperaturen, går alle styrte vifter på 100 %"))
+        g.add(failsafe)
         g.add(spin_row(_("Nødtemperatur (°C)"), safety.get("failsafe_temp", 95), 70, 105, 1,
                        lambda v: self.call("settings", failsafe_temp=v)))
-        g.add(switch_row(_("Sikring ved sensortap"), safety.get("sensor_lost_enabled", True),
-                         lambda v: self.call("settings", sensor_lost_enabled=v),
-                         _("Hvis sensoren til en kurve slutter å svare, går viftene på hastigheten under "
-                           "til den er tilbake")))
+        lost = switch_row(_("Sikring ved sensortap"), False, setter("sensor_lost_enabled"),
+                          _("Hvis sensoren til en kurve slutter å svare, går viftene på hastigheten under "
+                            "til den er tilbake"))
+        g.add(lost)
         g.add(spin_row(_("Hastighet ved sensortap (%)"), safety.get("sensor_lost_speed", 80), 30, 100, 5,
                        lambda v: self.call("settings", sensor_lost_speed=v)))
+
+        def sync(safety):
+            """Mens Claude har tilgang er begge på og kan ikke slås av (bryterne vises på og
+            grået ut); ellers viser de brukerens eget valg."""
+            mcp = bool(safety.get("mcp_enabled"))
+            syncing[0] = True
+            failsafe.set_active(mcp or bool(safety.get("failsafe_enabled")))
+            lost.set_active(mcp or bool(safety.get("sensor_lost_enabled", True)))
+            syncing[0] = False
+            failsafe.set_sensitive(not mcp)
+            lost.set_sensitive(not mcp)
+            g.set_description(_("Claude har tilgang, så begge er slått på og kan ikke slås av. "
+                                "Temperaturen og hastigheten kan fortsatt justeres.") if mcp else
+                              _("Begge er alltid på mens Claude-tilgang er slått på."))
+        sync(safety)
+        self._sync_safety = sync
 
     def build_alert_settings(self, page):
         from ..i18n import get_setting, set_setting
@@ -1249,8 +1268,11 @@ class MainWindow(Adw.ApplicationWindow):
         g.add(row)
 
     def set_mcp_enabled(self, on):
-        if self.call("settings", mcp_enabled=on) is None:
+        r = self.call("settings", mcp_enabled=on)
+        if r is None:
             return
+        if getattr(self, "_sync_safety", None):
+            self._sync_safety(r.get("safety") or {})  # Sikkerhet-fanen i samme dialog
         if not on:
             self.toast(_("Claude-tilgang er slått av"))
             return

@@ -356,4 +356,6 @@ T = {
     "Show temperatures in °F instead of °C": "Temperaturen in °F statt °C anzeigen",
     "Fan protection": "Lüfterschutz",
     "Could not open: {}": "Konnte nicht geöffnet werden: {}",
+    "Claude has access, so both are on and can't be turned off. The temperature and speed can still be adjusted.":
+        "Claude hat Zugriff, daher sind beide eingeschaltet und können nicht ausgeschaltet werden. Temperatur und Drehzahl lassen sich weiterhin einstellen.",
 }

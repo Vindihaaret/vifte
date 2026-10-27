@@ -358,4 +358,6 @@ T = {
     "Show temperatures in °F instead of °C": "Mostrar las temperaturas en °F en lugar de °C",
     "Fan protection": "Protección de ventiladores",
     "Could not open: {}": "No se pudo abrir: {}",
+    "Claude has access, so both are on and can't be turned off. The temperature and speed can still be adjusted.":
+        "Claude tiene acceso, así que ambos están activados y no se pueden desactivar. La temperatura y la velocidad se pueden seguir ajustando.",
 }

@@ -373,6 +373,8 @@ EN = {
     "Vis temperaturer i °F i stedet for °C": "Show temperatures in °F instead of °C",
     "Viftevern": "Fan protection",
     "Kunne ikke åpne: {}": "Could not open: {}",
+    "Claude har tilgang, så begge er slått på og kan ikke slås av. Temperaturen og hastigheten kan fortsatt justeres.":
+        "Claude has access, so both are on and can't be turned off. The temperature and speed can still be adjusted.",
 }
 
 _lang = None
