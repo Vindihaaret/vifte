@@ -1,0 +1,41 @@
+# Checks every push and pull request: lints, tests, translations and the install scripts.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 shellcheck
+
+      - name: Lint
+        run: |
+          pipx run ruff check . --target-version py310 \
+            --select E,F,W,B,UP,SIM,PLE,PLW \
+            --ignore E501,UP031,UP032,SIM108,SIM102,B008,PLW2901,SIM105,SIM117,UP015,E731,PLW0603,B905
+
+      - name: Test
+        run: /usr/bin/python3 -m unittest discover -s tests -v
+
+      - name: Check scripts and translations
+        run: |
+          for script in install.sh uninstall.sh; do bash -n "$script"; done
+          shellcheck --severity=error install.sh uninstall.sh
+          /usr/bin/python3 -c "
+          from vifte import i18n
+          from vifte.locales import de, es, fr
+          for name, mod in (('de', de), ('es', es), ('fr', fr)):
+              missing = [k for k in i18n.EN.values() if k not in mod.T]
+              assert not missing, f'{name} is missing: {missing[:5]}'
+          print('translations OK')
+          "

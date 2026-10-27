@@ -1,5 +1,7 @@
 # Vifte – FanControl for Linux
 
+[![CI](https://github.com/Vindihaaret/vifte/actions/workflows/ci.yml/badge.svg)](https://github.com/Vindihaaret/vifte/actions/workflows/ci.yml)
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/curves-dark.png">
