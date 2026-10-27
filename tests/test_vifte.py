@@ -113,6 +113,33 @@ class ConfigTests(unittest.TestCase):
         self.assertIsNotNone(cfg.curve("Prosessor"))
 
 
+class CalibrationFormatTests(unittest.TestCase):
+    WINDOWS = [[10, 0, False], [20, 340, False], [50, 775, False], [100, 1337, False]]
+
+    def test_reads_windows_and_old_vifte_format(self):
+        from vifte.config import calibration_points
+        self.assertEqual(calibration_points(self.WINDOWS)[1], (20.0, 340.0))
+        self.assertEqual(calibration_points([[20, 340], "bad", None, [5]]), [(20.0, 340.0)])
+        self.assertEqual(calibration_points(None), [])
+
+    def test_rpm_mode_with_windows_calibration(self):
+        self.assertAlmostEqual(Engine.rpm_to_percent(self.WINDOWS, 775), 50)
+
+    def test_written_like_fancontrol_on_windows(self):
+        from vifte.config import calibration_entry
+        self.assertEqual(calibration_entry({50: 775, 20: 340}), [[20, 340, False], [50, 775, False]])
+
+    def test_focus_is_not_grabbed_in_a_loop(self):
+        """GLib.idle_add(entry.grab_focus) gjentas så lenge grab_focus returnerer True, og markerer
+        teksten på nytt hele tiden – da kan man bare skrive én bokstav."""
+        import re
+        gui = os.path.join(os.path.dirname(__file__), "..", "vifte", "gui")
+        for name in os.listdir(gui):
+            if name.endswith(".py"):
+                with open(os.path.join(gui, name), encoding="utf-8") as f:
+                    self.assertIsNone(re.search(r"idle_add\(\s*[\w.]+\.grab_focus\s*\)", f.read()), name)
+
+
 # ====================================================================== motor
 
 class EngineTests(unittest.TestCase):

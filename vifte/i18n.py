@@ -372,6 +372,7 @@ EN = {
     "Skrivebordsvarsler": "Desktop notifications",
     "Vis temperaturer i °F i stedet for °C": "Show temperatures in °F instead of °C",
     "Viftevern": "Fan protection",
+    "Kunne ikke åpne: {}": "Could not open: {}",
 }
 
 _lang = None

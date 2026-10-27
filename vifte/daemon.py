@@ -19,7 +19,7 @@ import threading
 import time
 from collections import deque
 
-from .config import FanControlConfig
+from .config import FanControlConfig, calibration_entry, calibration_points
 from .engine import Engine
 from .mcpapi import McpApi
 
@@ -307,9 +307,9 @@ class Daemon:
             task["progress"] = 0.6 * (i + 1) / len(steps)
         if min_percent > 0:
             with self.lock:
-                old = {int(p): r for p, r in (entry.get("Calibration") or []) if p < min_percent}
+                old = {int(p): r for p, r in calibration_points(entry.get("Calibration")) if p < min_percent}
                 table.update(old)
-                entry["Calibration"] = [[p, table[p]] for p in sorted(table)]
+                entry["Calibration"] = calibration_entry(table)
                 self.rev += 1
                 self.dirty = True
             return {"points": len(table)}
@@ -350,7 +350,7 @@ class Daemon:
         else:
             stop = start = 0
         with self.lock:
-            entry["Calibration"] = [[p, table[p]] for p in sorted(table)]
+            entry["Calibration"] = calibration_entry(table)
             if not entry.get("SelectedStart") and not entry.get("SelectedStop"):
                 entry["SelectedStop"] = stop
                 entry["SelectedStart"] = max(start, stop)

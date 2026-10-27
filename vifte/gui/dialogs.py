@@ -5,7 +5,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from ..config import (CURVE_TITLES, MIX_FUNCTIONS, SENSOR_TYPES, curve_type,  # noqa: E402
+from ..config import (CURVE_TITLES, MIX_FUNCTIONS, SENSOR_TYPES, calibration_points, curve_type,  # noqa: E402
                       custom_sensor_type, format_point, hysteresis, parse_point, set_hysteresis)
 from ..i18n import _  # noqa: E402
 from .common import combo_row, entry_row, spin_row, switch_row  # noqa: E402
@@ -22,8 +22,9 @@ class LiveDialog(Adw.PreferencesDialog):
         self.set_search_enabled(False)
         self.set_content_width(620)
         self.set_content_height(760)
-        win.live_dialogs.add(self)
-        self.connect("map", lambda *_: GLib.timeout_add(100, self._unfocus))
+        # Registreres først når dialogen vises, så en dialog som feilet under oppbyggingen
+        # aldri blir liggende igjen og oppdateres i bakgrunnen.
+        self.connect("map", lambda *_: (win.live_dialogs.add(self), GLib.timeout_add(100, self._unfocus)))
         self.connect("closed", lambda *_: win.live_dialogs.discard(self))
 
     def _unfocus(self):
@@ -121,8 +122,8 @@ class ControlDialog(LiveDialog):
         self.update_calibration()
 
     def update_calibration(self):
-        cal = self.entry().get("Calibration") or []
-        self.calib.points = [(float(p), float(r)) for p, r in cal]
+        cal = calibration_points(self.entry().get("Calibration"))
+        self.calib.points = cal
         top = max([r for _, r in self.calib.points] + [1000])
         self.calib.y_range = (0, (int(top / 500) + 1) * 500)
         self.calib.set_visible(bool(cal))
@@ -591,4 +592,4 @@ class RenameDialog:
         dlg.connect("response", lambda d, r: r == "ok" and entry.get_text().strip() and
                     callback(entry.get_text().strip()))
         dlg.present(win)
-        GLib.idle_add(entry.grab_focus)
+        GLib.idle_add(lambda: entry.grab_focus() and False)  # bare én gang (True ville gjentatt den)

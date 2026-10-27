@@ -196,7 +196,7 @@ class MainWindow(Adw.ApplicationWindow):
         for name, cb in (("import", self.import_config), ("export", self.export_config),
                          ("new-config", self.new_config), ("save-as", self.save_as),
                          ("delete-config", self.delete_config), ("pair", self.pair),
-                         ("remap", lambda: RemapDialog(self).present(self)), ("rescan", self.rescan),
+                         ("remap", lambda: self.open_dialog(RemapDialog)), ("rescan", self.rescan),
                          ("settings", self.settings), ("about", self.about), ("uninstall", self.uninstall),
                          ("check-update", lambda: self.get_application().updates.check(manual=True)),
                          ("quit", self.request_quit)):
@@ -250,6 +250,19 @@ class MainWindow(Adw.ApplicationWindow):
             self.set_visible(False)  # lukk til statusfeltet, som i FanControl
             return True
         return False
+
+    def open_dialog(self, cls, *args):
+        """Åpner en dialog. Feiler den (f.eks. uventede data i en importert fil), vises en
+        melding i stedet for at knappen bare ikke gjør noe."""
+        try:
+            dlg = cls(self, *args)
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            self.toast(_("Kunne ikke åpne: {}").format(ex))
+            return None
+        dlg.present(self)
+        return dlg
 
     # ================================================================ tjeneste
     def toast(self, text):
@@ -408,7 +421,7 @@ class MainWindow(Adw.ApplicationWindow):
         m, cfg = self.model, self.model.cfg
         ident = e.get("Identifier")
         card = Card(e.get("NickName") or e.get("Name") or ident, None if local else ident,
-                    lambda: ControlDialog(self, ident).present(self), e.get("IsHidden"))
+                    lambda: self.open_dialog(ControlDialog, ident), e.get("IsHidden"))
         row = Gtk.Box(spacing=8)
         sw = Gtk.Switch(active=bool(e.get("Enable")), valign=Gtk.Align.CENTER,
                         tooltip_text=_("Aktiver styring"))
@@ -507,7 +520,7 @@ class MainWindow(Adw.ApplicationWindow):
             sub += " · " + m.cfg.display_name(src, src)
         elif kind == "mix":
             sub += " · " + ", ".join(r.get("Name", "?") for r in c.get("SelectedFanCurves") or [])
-        card = Card(name, sub, lambda: CurveDialog(self, name).present(self), c.get("IsHidden"))
+        card = Card(name, sub, lambda: self.open_dialog(CurveDialog, name), c.get("IsHidden"))
         graph = None
         if kind in ("graph", "linear"):
             graph = CurveGraph(editable=False, height=110)
@@ -562,7 +575,7 @@ class MainWindow(Adw.ApplicationWindow):
                 break
         cfg.curves.append(new_curve(kind, name, cfg, src))
         self.config_changed(True)
-        CurveDialog(self, name).present(self)
+        self.open_dialog(CurveDialog, name)
 
     # ---- hastigheter
     def build_speeds(self):
@@ -674,7 +687,7 @@ class MainWindow(Adw.ApplicationWindow):
             for s in cfg.custom_sensors:
                 ident = s.get("Identifier")
                 card = Card(s.get("Name") or ident, _(SENSOR_TYPES[custom_sensor_type(s)]),
-                            lambda i=ident: CustomSensorDialog(self, i).present(self))
+                            lambda i=ident: self.open_dialog(CustomSensorDialog, i))
                 big = Gtk.Label(label="–", xalign=0)
                 big.add_css_class("vifte-big")
                 card.append(big)
@@ -701,7 +714,7 @@ class MainWindow(Adw.ApplicationWindow):
         s = new_custom_sensor(kind, f"{base} {n}" if n > 1 else base)
         cfg.custom_sensors.append(s)
         self.config_changed(True)
-        CustomSensorDialog(self, s["Identifier"]).present(self)
+        self.open_dialog(CustomSensorDialog, s["Identifier"])
 
     # ================================================================ løpende oppdatering
     def update_values(self):
@@ -712,7 +725,10 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception as ex:  # en defekt oppdatering skal ikke stoppe resten
                 print("oppdatering:", ex, file=sys.stderr)
         for d in list(self.live_dialogs):
-            d.update_live()
+            try:
+                d.update_live()
+            except Exception as ex:  # en defekt dialog skal ikke stoppe resten
+                print("dialog:", ex, file=sys.stderr)
         self.update_header()
         self.update_tray()
         self.show_mcp_activity(st.get("mcp_log") or [])
@@ -917,7 +933,7 @@ class MainWindow(Adw.ApplicationWindow):
         if act == "cancel":
             self.call("cancel")
         elif act == "remap":
-            RemapDialog(self).present(self)
+            self.open_dialog(RemapDialog)
         elif act == "resume":
             self.call("settings", paused=False)
 

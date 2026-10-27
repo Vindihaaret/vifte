@@ -358,4 +358,5 @@ T = {
     "Desktop notifications": "Notifications de bureau",
     "Show temperatures in °F instead of °C": "Afficher les températures en °F au lieu de °C",
     "Fan protection": "Protection des ventilateurs",
+    "Could not open: {}": "Impossible d’ouvrir : {}",
 }

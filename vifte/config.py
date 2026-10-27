@@ -61,6 +61,26 @@ def parse_point(p):
     return float(p[0]), float(p[1])
 
 
+def calibration_points(cal):
+    """[(prosent, rpm)] fra en kontrolls Calibration. FanControl på Windows skriver
+    [prosent, rpm, false]; eldre Vifte-filer har [prosent, rpm]. Ugyldige punkter hoppes over."""
+    out = []
+    for item in cal or []:
+        try:
+            if isinstance(item, dict):
+                out.append((float(item.get("Percent", item.get("X"))), float(item.get("Rpm", item.get("Y")))))
+            else:
+                out.append((float(item[0]), float(item[1])))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return out
+
+
+def calibration_entry(table):
+    """{prosent: rpm} -> Calibration i samme form som FanControl på Windows."""
+    return [[p, table[p], False] for p in sorted(table)]
+
+
 def format_point(t, v):
     def f(x):
         x = round(float(x), 6)

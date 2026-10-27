@@ -7,7 +7,8 @@ import time
 from collections import deque
 
 from . import hw
-from .config import FanControlConfig, curve_type, custom_sensor_type, hysteresis, parse_point
+from .config import (FanControlConfig, calibration_points, curve_type, custom_sensor_type, hysteresis,
+                     parse_point)
 
 log = logging.getLogger("vifte.engine")
 
@@ -397,7 +398,7 @@ class Engine:
     # ------------------------------------------------------------ kontroller
     @staticmethod
     def rpm_to_percent(calibration, rpm):
-        pts = sorted((float(r), float(p)) for p, r in calibration or [])
+        pts = sorted((r, p) for p, r in calibration_points(calibration))
         # fjern ikke-monotone punkter
         mono = []
         for r, p in pts:
