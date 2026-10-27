@@ -179,7 +179,6 @@ class MainWindow(Adw.ApplicationWindow):
         menu.append_section(None, sec)
         sec = Gio.Menu()
         sec.append(_("Vis skjulte kort"), "win.show-hidden")
-        sec.append(_("Fahrenheit"), "win.fahrenheit")
         sec.append(_("Pause styring (BIOS overtar)"), "win.pause")
         sec.append(_("Innstillinger …"), "win.settings")
         sec.append(_("Se etter oppdateringer …"), "win.check-update")
@@ -204,7 +203,7 @@ class MainWindow(Adw.ApplicationWindow):
             a = Gio.SimpleAction.new(name, None)
             a.connect("activate", lambda _a, _p, cb=cb: cb())
             self.add_action(a)
-        for name, cb in (("show-hidden", self.toggle_hidden), ("fahrenheit", self.toggle_fahrenheit),
+        for name, cb in (("show-hidden", self.toggle_hidden),
                          ("pause", self.toggle_pause)):
             a = Gio.SimpleAction.new_stateful(name, None, GLib.Variant.new_boolean(False))
             a.connect("activate", lambda act, _p, cb=cb: cb(act))
@@ -345,7 +344,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.build_curves()
         self.build_speeds()
         self.build_sensors()
-        for name, val in (("show-hidden", self.model.show_hidden), ("fahrenheit", self.model.fahrenheit),
+        for name, val in (("show-hidden", self.model.show_hidden),
                           ("pause", bool(self.model.state.get("paused")))):
             self.lookup_action(name).set_state(GLib.Variant.new_boolean(val))
         self.update_values()
@@ -775,7 +774,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.banner.set_revealed(False)
 
     def check_alerts(self):
-        """Skrivebordsvarsler (frivillig, slås på under Innstillinger → Varsler)."""
+        """Skrivebordsvarsler (frivillig, slås på under Innstillinger → Sikkerhet → Varsler)."""
         from ..i18n import get_setting
         m, st = self.model, self.model.state
         if self.get_application().window is not self:
@@ -1045,9 +1044,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.model.cfg.window["ShowHiddenCards"] = v
         self.config_changed(True)
 
-    def toggle_fahrenheit(self, act):
-        v = not act.get_state().get_boolean()
-        self.model.cfg.window["Fahrenheit"] = v
+    def set_fahrenheit(self, on):
+        self.model.cfg.window["Fahrenheit"] = on
         self.config_changed(True)
 
     def toggle_pause(self, act):
@@ -1057,8 +1055,13 @@ class MainWindow(Adw.ApplicationWindow):
 
     def settings(self):
         dlg = Adw.PreferencesDialog(title=_("Innstillinger"))
-        page = Adw.PreferencesPage()
+        # Faner: Generelt, Sikkerhet (nødmodus, sensortap, varsler) og Claude
+        page = Adw.PreferencesPage(title=_("Generelt"), icon_name="preferences-system-symbolic")
         dlg.add(page)
+        safety_page = Adw.PreferencesPage(title=_("Sikkerhet"), icon_name="security-high-symbolic")
+        dlg.add(safety_page)
+        claude_page = Adw.PreferencesPage(title="Claude", icon_name="user-available-symbolic")
+        dlg.add(claude_page)
         g = Adw.PreferencesGroup(title="Språk / Language")
         page.add(g)
         langs = [(k, _(label)) for k, label in LANGUAGES]
@@ -1076,21 +1079,23 @@ class MainWindow(Adw.ApplicationWindow):
                 g.add(combo_row(title, sensors, get_setting(f"tray_{kind}_sensor", "auto"),
                                 lambda v, k=kind: (set_setting(f"tray_{k}_sensor", v), self.update_tray()),
                                 subtitle=_("Vises øverst i menyen til ikonet i statusfeltet")))
-        self.build_safety_settings(page)
-        self.build_alert_settings(page)
-        self.build_mcp_settings(page)
-        self.build_update_settings(page)
-        g = Adw.PreferencesGroup(title=_("Tjeneste"))
-        page.add(g)
-        g.add(spin_row(_("Oppdateringsintervall (s)"), self.model.state.get("interval", 1.0), 0.25, 10, 0.25,
-                       lambda v: self.call("settings", interval=v), digits=2))
         g = Adw.PreferencesGroup(title=_("Visning"))
         page.add(g)
         w = self.model.cfg.window
         g.add(combo_row(_("Tema"), [("system", _("Følg systemet")), ("light", _("Lyst")), ("dark", _("Mørkt"))],
                         self.theme_choice(), self.set_theme))
+        g.add(switch_row(_("Fahrenheit"), self.model.fahrenheit, self.set_fahrenheit,
+                         _("Vis temperaturer i °F i stedet for °C")))
         g.add(switch_row(_("Skjul hastighetskort"), w.get("HideFanSpeedCards"),
                          lambda v: (w.__setitem__("HideFanSpeedCards", v), self.apply_view())))
+        self.build_update_settings(page)
+        g = Adw.PreferencesGroup(title=_("Tjeneste"))
+        page.add(g)
+        g.add(spin_row(_("Oppdateringsintervall (s)"), self.model.state.get("interval", 1.0), 0.25, 10, 0.25,
+                       lambda v: self.call("settings", interval=v), digits=2))
+        self.build_safety_settings(safety_page)
+        self.build_alert_settings(safety_page)
+        self.build_mcp_settings(claude_page)
         # Avinstallering ligger nederst her (ikke i hovedmenyen), så det må være et aktivt valg.
         if os.path.exists(UNINSTALLER):
             g = Adw.PreferencesGroup()
@@ -1128,7 +1133,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def build_safety_settings(self, page):
         safety = self.model.state.get("safety") or {}
-        g = Adw.PreferencesGroup(title=_("Sikkerhet"),
+        g = Adw.PreferencesGroup(title=_("Viftevern"),
                                  description=_("Begge er alltid på mens Claude-tilgang er slått på."))
         page.add(g)
         g.add(switch_row(_("Nødmodus"), safety.get("failsafe_enabled"),

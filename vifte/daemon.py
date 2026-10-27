@@ -28,7 +28,7 @@ log = logging.getLogger("vifte")
 SYSTEM_DIR = "/var/lib/vifte"
 SYSTEM_SOCKET = "/run/vifte/vifte.sock"
 MCP_DISABLED = ("Claude/MCP access is turned off in Vifte. Ask the user to enable it under "
-                "Settings → Claude (MCP).")
+                "Settings → Claude.")
 NOT_IN_GROUP = "ingen tilgang: brukeren er ikke med i gruppen vifte (kjør install.sh på nytt)"
 
 

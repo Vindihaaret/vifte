@@ -356,4 +356,6 @@ T = {
     "Remove alert": "Supprimer l’alerte",
     "Add alert": "Ajouter une alerte",
     "Desktop notifications": "Notifications de bureau",
+    "Show temperatures in °F instead of °C": "Afficher les températures en °F au lieu de °C",
+    "Fan protection": "Protection des ventilateurs",
 }

@@ -69,7 +69,7 @@ Start **Vifte** from the application menu, or run `vifte`.
 
 ### Uninstall
 
-Open **Settings** in the app and click **Uninstall** at the bottom, or run `vifte uninstall` (or `sudo vifte-uninstall`).
+Open **Settings → General** in the app and click **Uninstall** at the bottom, or run `vifte uninstall` (or `sudo vifte-uninstall`).
 The service is stopped and the fans are handed back to the BIOS. The configurations in `/var/lib/vifte`
 are kept unless you tick the box in the dialog (or pass `--purge`).
 
@@ -100,7 +100,7 @@ system behaves over time, and save the result when you are happy.
 
 ### Turn it on
 
-1. In Vifte: **Settings → Claude (MCP) → Allow control from Claude**. No restart is needed.
+1. In Vifte: **Settings → Claude → Allow control from Claude**. No restart is needed.
 2. Connect it to Claude Code – click **Add** in the same section, or run:
 
    ```bash
@@ -182,14 +182,14 @@ hysteresis at min/max, one-way hysteresis (older files), RPM mode (requires cali
 
 **Custom sensors:** Mix, time average, file (`.sensor`, first line = °C), offset.
 
-**Other:** multiple configurations (profiles) with quick switching, Fahrenheit, show hidden cards, hide
+**Other:** multiple configurations (profiles) with quick switching, Fahrenheit (**Settings → General**), show hidden cards, hide
 fan speed cards, update interval, pause (BIOS takes over).
 
 **System tray:** a tray icon with a menu (show window, switch configuration, pause, quit) that can also
 show sensor values as numbers, like FanControl. Click the gear on a sensor card → **Show in system tray**.
 The choice is stored in `TrayIcons` in the configuration, with the same colours as on Windows. While the
 tray icon is active, closing the window keeps Vifte in the tray. The icon starts at login (can be turned
-off under **Settings → System tray**). GNOME needs the *AppIndicator and KStatusNotifierItem Support*
+off under **Settings → General**). GNOME needs the *AppIndicator and KStatusNotifierItem Support*
 extension; KDE and most other desktops support it out of the box.
 
 **Emergency mode:** turn it on under **Settings → Safety**. When a CPU or GPU core temperature reaches
@@ -203,7 +203,7 @@ resumes as soon as the sensor is back. A mix sensor counts as lost if any of its
 the missing one could be the hottest. Fans whose sensor never worked are left to the BIOS. On by default;
 the switch and the speed are under **Settings → Safety**.
 
-**Alerts:** optional desktop notifications, turned on under **Settings → Alerts**. Add one or more
+**Alerts:** optional desktop notifications, turned on under **Settings → Safety → Alerts**. Add one or more
 sensors with a limit below the emergency temperature; you get a notification when a sensor has stayed
 above its limit for 10 seconds, and not again until it has dropped 3 °C below it. With alerts on, you
 also get a notification when emergency mode starts or a sensor stops responding. Vifte must be running
@@ -223,13 +223,13 @@ fans. To hand the fans back to the BIOS, use **Menu → Pause control**.
 **Updates:** **Menu → Check for updates …** looks for a new release on GitHub. If there is one, you see
 what's new and can update with one click (you confirm with your password; the app restarts itself).
 Vifte also checks automatically once a month and shows a notification – this can be turned off under
-**Settings → Updates**. Only the public GitHub API is contacted; nothing about you or your system is sent.
+**Settings → General**. Only the public GitHub API is contacted; nothing about you or your system is sent.
 
-**Theme:** follows the system light/dark setting, or choose Light/Dark under **Settings → Theme**. The
+**Theme:** follows the system light/dark setting, or choose Light/Dark under **Settings → General → Theme**. The
 choice is stored in the same fields FanControl uses (`SyncThemeWithWindows`/`SelectedTheme`).
 
 **Language:** English, Norwegian, German, French and Spanish. The default follows the system language;
-change it under **Settings → Språk / Language**, or set `VIFTE_LANG` (`en`, `nb`, `de`, `fr`, `es`) for
+change it under **Settings → General → Språk / Language**, or set `VIFTE_LANG` (`en`, `nb`, `de`, `fr`, `es`) for
 the command line. Translations live in `vifte/locales/` (keyed by the English text) – contributions for
 more languages are welcome.
 

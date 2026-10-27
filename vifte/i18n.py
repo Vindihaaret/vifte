@@ -370,6 +370,8 @@ EN = {
     "Fjern varsel": "Remove alert",
     "Legg til varsel": "Add alert",
     "Skrivebordsvarsler": "Desktop notifications",
+    "Vis temperaturer i °F i stedet for °C": "Show temperatures in °F instead of °C",
+    "Viftevern": "Fan protection",
 }
 
 _lang = None
