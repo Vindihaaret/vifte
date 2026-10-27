@@ -20,6 +20,10 @@ etc.), so configurations can be moved between Windows and Linux.
 * **Claude integration (MCP)**: let Claude read your sensors and tune curves and fans for you – within
   hard safety limits enforced by Vifte.
 * **Emergency mode**: above a set CPU/GPU temperature every controlled fan runs at 100 %.
+* **Sensor loss protection**: if a curve's sensor stops responding, its fans run at a safe speed instead
+  of staying where they were.
+* **Optional temperature alerts** as desktop notifications, and a **30-minute history graph** on every
+  sensor card.
 * English, Norwegian, German, French and Spanish user interface.
 * No Wine, no .NET.
 
@@ -29,7 +33,7 @@ etc.), so configurations can be moved between Windows and Linux.
 
 Made by **Jan Ivar Sørensen** using [Claude Code](https://claude.com/claude-code), Anthropic's AI coding
 assistant – from working out the FanControl configuration format to the GTK interface, the background
-service, the tray icon and the Claude integration.
+service, the tray icon, the safety features and the Claude integration.
 
 ## Screenshots
 
@@ -37,6 +41,8 @@ service, the tray icon and the Claude integration.
 |---|---|
 | ![Curve editor, light theme](docs/screenshots/curve-editor-light.png) | ![Curve editor, dark theme](docs/screenshots/curve-editor-dark.png) |
 | ![Fan controls, light theme](docs/screenshots/controls-light.png) | ![Fan controls, dark theme](docs/screenshots/controls-dark.png) |
+| ![Sensors with history graphs, light theme](docs/screenshots/sensors-light.png) | ![Sensors with history graphs, dark theme](docs/screenshots/sensors-dark.png) |
+| ![Safety settings and alerts, light theme](docs/screenshots/settings-light.png) | ![Safety settings and alerts, dark theme](docs/screenshots/settings-dark.png) |
 
 ## Requirements
 
