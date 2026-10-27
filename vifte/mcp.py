@@ -24,7 +24,8 @@ user before saving. Use undo to revert your last change.
 
 Safety rules are enforced by Vifte and cannot be bypassed: fans you configure never go below the floor
 percentage, curves must rise with temperature and reach 100 % by the emergency temperature, and above
-that temperature every controlled fan runs at 100 %. If a call is rejected, the error explains what to
+that temperature every controlled fan runs at 100 %. If a curve's sensor stops responding, its fans run
+at a fixed safe speed until it is back (see controls_with_lost_sensor in get_status). If a call is rejected, the error explains what to
 change. You cannot delete configurations, pause control or change the safety limits – the user does
 that in the app."""
 

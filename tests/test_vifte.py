@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -195,6 +196,71 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(self.e.failsafe_active)
 
 
+class SensorLostTests(unittest.TestCase):
+    """Sikring ved sensortap: viftene går på valgt hastighet når kurvens sensor forsvinner."""
+
+    def setUp(self):
+        EngineTests.setUp(self)
+        self.e.sensor_lost_speed = 80
+        self.clock = [100.0]
+        patcher = mock.patch("vifte.engine.time.monotonic", lambda: self.clock[0])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tick(self, seconds=1):
+        self.clock[0] += seconds
+        self.e.tick()
+        return self.fake.backends[FAN0].value
+
+    def test_lost_sensor_runs_fans_at_chosen_speed_and_recovers(self):
+        self.fake.temps[CPU] = 50
+        self.assertAlmostEqual(self.tick(), 45)
+        del self.fake.temps[CPU]                       # sensoren slutter å svare
+        self.assertAlmostEqual(self.tick(), 45, msg="kort utfall: hold siste verdi")
+        self.assertAlmostEqual(self.tick(5), 80)
+        self.assertEqual(self.e.control_state[FAN0]["lost"], [CPU])
+        self.assertEqual(self.e.snapshot()["sensor_lost"]["controls"], {FAN0: [CPU]})
+        self.fake.temps[CPU] = 50                      # tilbake
+        self.assertAlmostEqual(self.tick(), 45)
+        self.assertIsNone(self.e.control_state[FAN0]["lost"])
+        self.assertEqual(self.e.snapshot()["sensor_lost"]["controls"], {})
+
+    def test_disabled_protection_holds_last_value(self):
+        self.e.sensor_lost_enabled = False
+        self.fake.temps[CPU] = 50
+        self.tick()
+        del self.fake.temps[CPU]
+        self.assertAlmostEqual(self.tick(30), 45)
+        self.assertIsNone(self.e.control_state[FAN0].get("lost"))
+
+    def test_sensor_that_never_worked_leaves_fan_to_bios(self):
+        del self.fake.temps[CPU]
+        self.tick()
+        self.tick(30)
+        self.assertEqual(self.fake.backends[FAN0].writes, [])
+
+    def test_mix_sensor_is_lost_when_one_source_is_missing(self):
+        from vifte.config import new_custom_sensor
+        mixs = new_custom_sensor("mix", "Maks")
+        mixs.update(SelectedMixFunction=0, SelectedSensors=[{"Identifier": CPU}, {"Identifier": GPU}])
+        self.e.cfg.custom_sensors.append(mixs)
+        self.e.cfg.curve("CPU")["SelectedTempSource"] = {"Identifier": mixs["Identifier"]}
+        self.fake.temps.update({CPU: 50, GPU: 40})
+        self.assertAlmostEqual(self.tick(), 45)
+        del self.fake.temps[GPU]                       # CPU svarer fortsatt, men GPU kan være varmest
+        self.tick()
+        self.assertAlmostEqual(self.tick(5), 80)
+        self.assertEqual(self.e.control_state[FAN0]["lost"], [GPU])
+
+    def test_emergency_mode_wins_over_sensor_loss(self):
+        self.e.failsafe_enabled, self.e.failsafe_temp = True, 90
+        self.fake.temps[CPU] = 50
+        self.tick()
+        del self.fake.temps[CPU]
+        self.fake.temps[GPU] = 95
+        self.assertEqual(self.tick(10), 100)
+
+
 # ====================================================================== MCP / sikkerhet
 
 class McpTests(unittest.TestCase):
@@ -230,6 +296,24 @@ class McpTests(unittest.TestCase):
         self.assertTrue(self.d.engine.failsafe_enabled)
         self.d.handle({"cmd": "settings", "mcp_enabled": False})
         self.assertFalse(self.d.engine.failsafe_enabled)
+
+    def test_enabling_mcp_forces_sensor_loss_protection_above_floor(self):
+        self.d.handle({"cmd": "settings", "sensor_lost_enabled": False, "sensor_lost_speed": 5,
+                       "mcp_floor": 40})
+        safety = self.d.safety()
+        self.assertEqual(safety["sensor_lost_speed"], 30, "clamped to 30–100")
+        self.assertTrue(self.d.engine.sensor_lost_enabled)
+        self.assertEqual(self.d.engine.sensor_lost_speed, 40, "never below Claude's floor")
+        self.d.handle({"cmd": "settings", "mcp_enabled": False})
+        self.assertFalse(self.d.engine.sensor_lost_enabled)
+
+    def test_history_command_for_the_app(self):
+        self.d._last_history = 0
+        self.d.record_history()
+        h = self.d.handle({"cmd": "history"})
+        self.assertEqual(len(h["t"]), 1)
+        self.assertEqual(h["series"][CASE], [30.0], "all sensors, not just CPU/GPU")
+        self.assertEqual(set(self.d.handle({"cmd": "history", "ids": [CPU]})["series"]), {CPU})
 
     def test_status_lists_hardware(self):
         st = self.call("get_status")
@@ -506,6 +590,39 @@ class TrayMenuTests(unittest.TestCase):
         menu.update_labels({"cpu": "CPU: 52 °C"})
         self.assertEqual([n for n, _ in conn.signals], ["ItemsPropertiesUpdated"])
         self.assertEqual(conn.signals[0][1][0][0][1]["label"], "CPU: 52 °C")
+
+
+class AlertTests(unittest.TestCase):
+    def test_alert_needs_ten_seconds_and_rearms_below_limit(self):
+        from vifte.gui.alerts import AlertMonitor
+        a = AlertMonitor()
+        rules = [{"sensor": CPU, "temp": 80}]
+        temps = {CPU: 85}
+
+        def run(now):
+            return a.check(now, rules, temps.get)
+        self.assertEqual(run(0), [])
+        self.assertEqual(run(5), [], "kort topp: ingen varsel")
+        self.assertEqual(run(10), [("temp", rules[0], 85)])
+        self.assertEqual(run(20), [], "bare ett varsel")
+        temps[CPU] = 79                                  # under grensen, men innenfor slingringsmonnet
+        run(21)
+        temps[CPU] = 85
+        self.assertEqual(run(40), [], "ikke nullstilt før 3 grader under")
+        temps[CPU] = 76
+        run(41)
+        temps[CPU] = 85
+        run(42)
+        self.assertEqual(len(run(52)), 1)
+
+    def test_emergency_and_lost_sensor_alerts_only_on_change(self):
+        from vifte.gui.alerts import AlertMonitor
+        a = AlertMonitor()
+        self.assertEqual(a.check(0, [], dict().get, True, [FAN0]), [], "ingen varsel om tilstand ved oppstart")
+        a = AlertMonitor()
+        a.check(0, [], dict().get, False, [])
+        self.assertEqual(a.check(1, [], dict().get, True, [FAN0]), [("failsafe",), ("lost", [FAN0])])
+        self.assertEqual(a.check(2, [], dict().get, True, [FAN0]), [])
 
 
 class TranslationTests(unittest.TestCase):

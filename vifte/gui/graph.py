@@ -210,3 +210,62 @@ def _ticks(lo, hi, step):
         out.append(v)
         v += step
     return out
+
+
+class Sparkline(Gtk.DrawingArea):
+    """Liten historikkgraf for et sensorkort. Hull (None) tegnes som brudd i linjen."""
+
+    def __init__(self, min_span=5.0, height=36):
+        super().__init__()
+        self.values = []
+        self.min_span = min_span
+        self.set_content_height(height)
+        self.set_hexpand(True)
+        self.set_draw_func(self._draw)
+
+    def set_values(self, values):
+        if values != self.values:
+            self.values = list(values)
+            self.queue_draw()
+
+    def _draw(self, area, cr, w, h):
+        vals = [v for v in self.values if v is not None]
+        if len(self.values) < 2 or not vals:
+            return
+        lo, hi = min(vals), max(vals)
+        if hi - lo < self.min_span:
+            mid = (hi + lo) / 2
+            lo, hi = mid - self.min_span / 2, mid + self.min_span / 2
+        n = len(self.values)
+
+        def xy(i, v):
+            return i * (w - 1) / (n - 1), 2 + (h - 4) * (1 - (v - lo) / (hi - lo))
+
+        accent = _color(self, "accent_color", (0.2, 0.5, 0.9, 1))
+        # del opp i sammenhengende biter
+        runs, cur = [], []
+        for i, v in enumerate(self.values):
+            if v is None:
+                if cur:
+                    runs.append(cur)
+                cur = []
+            else:
+                cur.append(xy(i, v))
+        if cur:
+            runs.append(cur)
+        for run in runs:
+            cr.move_to(run[0][0], h)
+            for x, y in run:
+                cr.line_to(x, y)
+            cr.line_to(run[-1][0], h)
+            cr.close_path()
+            cr.set_source_rgba(accent.red, accent.green, accent.blue, 0.15)
+            cr.fill()
+            cr.move_to(*run[0])
+            for x, y in run[1:]:
+                cr.line_to(x, y)
+            if len(run) == 1:
+                cr.line_to(run[0][0] + 1, run[0][1])
+            cr.set_source_rgba(accent.red, accent.green, accent.blue, 1)
+            cr.set_line_width(1.5)
+            cr.stroke()

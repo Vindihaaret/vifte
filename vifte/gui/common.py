@@ -19,6 +19,7 @@ class Model:
         self.cfg = FanControlConfig()
         self.rev = -1
         self.name = ""
+        self.history = {"t": [], "series": {}}
 
     # ---- konfigurasjon
     def fetch_config(self):
@@ -58,6 +59,12 @@ class Model:
             return custom[config_id]
         s = self.sensor(config_id)
         return s["value"] if s else None
+
+    def history_values(self, config_id):
+        """(tidspunkter, verdier) fra tjenestens historikk for en sensor i konfigurasjonen."""
+        series = self.history.get("series") or {}
+        vals = series.get(config_id) or series.get(self.local_id(config_id)) or []
+        return self.history.get("t") or [], vals
 
     def fmt_temp(self, v):
         if v is None:

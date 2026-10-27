@@ -2,6 +2,7 @@
 import os
 import shutil
 import sys
+import time
 
 import gi
 
@@ -14,9 +15,10 @@ from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, FanControlConfig,
                       custom_sensor_type, new_curve, new_custom_sensor, parse_point)
 from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
+from .alerts import AlertMonitor  # noqa: E402
 from .common import Model, combo_row, spin_row, switch_row  # noqa: E402
 from .dialogs import ControlDialog, CurveDialog, CustomSensorDialog, RemapDialog, RenameDialog  # noqa: E402
-from .graph import CurveGraph  # noqa: E402
+from .graph import CurveGraph, Sparkline  # noqa: E402
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -142,6 +144,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.updaters = []
         self.connected = False
         self._structure_key = None
+        self.alerts = AlertMonitor()
+        self._history_at = 0.0
 
         self.toasts = Adw.ToastOverlay()
         tv = Adw.ToolbarView()
@@ -270,6 +274,9 @@ class MainWindow(Adw.ApplicationWindow):
                 m.fetch_config()
                 self.connected = True
                 self.rebuild()
+            if self.get_visible() and time.monotonic() - self._history_at >= 5:
+                self._history_at = time.monotonic()
+                m.history = m.client.call("history")
         except Exception as ex:
             if self.connected or self._structure_key is None:
                 self.connected = False
@@ -589,7 +596,32 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 big.set_label(m.fmt_temp(v))
         self.updaters.append(update)
+        self.add_history(card, ident, kind)
         return card
+
+    def add_history(self, card, ident, kind):
+        """Graf over de siste 30 minuttene (fra tjenestens historikk) nederst på kortet."""
+        m = self.model
+        spark = Sparkline(min_span=300 if kind == "fan" else 5)
+        caption = Gtk.Label(xalign=0, visible=False)
+        caption.add_css_class("dim-label")
+        caption.add_css_class("caption")
+        caption.add_css_class("vifte-sub")
+        card.append(spark)
+        card.append(caption)
+
+        def fmt(v):
+            return f"{v:.0f} RPM" if kind == "fan" else m.fmt_temp(v)
+
+        def update():
+            t, vals = m.history_values(ident)
+            spark.set_values(vals)
+            known = [v for v in vals if v is not None]
+            minutes = round((t[-1] - t[0]) / 60) if len(t) > 1 else 0
+            caption.set_visible(bool(known) and minutes >= 1)
+            if known and minutes >= 1:
+                caption.set_label(_("Siste {} min: {} – {}").format(minutes, fmt(min(known)), fmt(max(known))))
+        self.updaters.append(update)
 
     def sensor_menu(self, ident):
         entry = self.model.cfg.sensor_entry(ident)
@@ -648,6 +680,7 @@ class MainWindow(Adw.ApplicationWindow):
                 big.add_css_class("vifte-big")
                 card.append(big)
                 self.updaters.append(lambda b=big, i=ident: b.set_label(m.fmt_temp(m.temp_value(i))))
+                self.add_history(card, ident, "temperature")
                 flow.append(card)
         groups = {}
         for e in cfg.temp_sensors:
@@ -684,12 +717,24 @@ class MainWindow(Adw.ApplicationWindow):
         self.update_header()
         self.update_tray()
         self.show_mcp_activity(st.get("mcp_log") or [])
+        self.check_alerts()
         # bannere – nødmodus har høyest prioritet
         fs = st.get("failsafe") or {}
         if fs.get("active"):
             trig = fs.get("trigger") or [None, None]
             self.banner.set_title(_("NØDMODUS: {} er {} – alle styrte vifter går på 100 %").format(
                 self.model.cfg.display_name(trig[0], trig[0]), self.model.fmt_temp(trig[1])))
+            self.banner.set_button_label("")
+            self.banner.add_css_class("error")
+            self.banner.set_revealed(True)
+            self.progress.set_visible(False)
+            return
+        lost = (st.get("sensor_lost") or {}).get("controls") or {}
+        if lost:
+            sensors = sorted({i for ids in lost.values() for i in ids})
+            self.banner.set_title(_("Sensor svarer ikke: {} – {} vifte(r) går på {} %").format(
+                ", ".join(self.model.cfg.display_name(i, i) for i in sensors), len(lost),
+                round((st.get("sensor_lost") or {}).get("speed", 80))))
             self.banner.set_button_label("")
             self.banner.add_css_class("error")
             self.banner.set_revealed(True)
@@ -728,6 +773,45 @@ class MainWindow(Adw.ApplicationWindow):
             self.banner.set_revealed(True)
         else:
             self.banner.set_revealed(False)
+
+    def check_alerts(self):
+        """Skrivebordsvarsler (frivillig, slås på under Innstillinger → Varsler)."""
+        from ..i18n import get_setting
+        m, st = self.model, self.model.state
+        if self.get_application().window is not self:
+            return
+        enabled = bool(get_setting("alerts_enabled", False))
+        rules = (get_setting("alerts", []) or []) if enabled else []
+        events = self.alerts.check(time.monotonic(), rules, m.temp_value,
+                                   (st.get("failsafe") or {}).get("active"),
+                                   ((st.get("sensor_lost") or {}).get("controls") or {}).keys())
+        if not enabled:
+            return
+        for ev in events:
+            if ev[0] == "temp":
+                rule, v = ev[1], ev[2]
+                name = m.cfg.display_name(rule["sensor"], rule["sensor"])
+                title = _("{} er {}").format(name, m.fmt_temp(v))
+                body = _("Over varslingsgrensen på {}").format(m.fmt_temp(float(rule["temp"])))
+                nid = "vifte-alert-" + AlertMonitor.key(rule)
+            elif ev[0] == "failsafe":
+                trig = (st.get("failsafe") or {}).get("trigger") or [None, None]
+                title = _("Nødmodus: alle styrte vifter går på 100 %")
+                body = _("{} er {}").format(m.cfg.display_name(trig[0], trig[0]), m.fmt_temp(trig[1]))
+                nid = "vifte-failsafe"
+            else:
+                lost = (st.get("sensor_lost") or {}).get("controls") or {}
+                sensors = sorted({i for c in ev[1] for i in lost.get(c, [])})
+                title = _("Sensor svarer ikke")
+                body = _("{} – {} vifte(r) går på {} %").format(
+                    ", ".join(m.cfg.display_name(i, i) for i in sensors), len(ev[1]),
+                    round((st.get("sensor_lost") or {}).get("speed", 80)))
+                nid = "vifte-sensor-lost"
+            n = Gio.Notification.new(title)
+            n.set_body(body)
+            n.set_priority(Gio.NotificationPriority.HIGH if ev[0] != "temp" else Gio.NotificationPriority.NORMAL)
+            n.set_default_action("app.show-window")
+            self.get_application().send_notification(nid, n)
 
     def update_tray(self):
         tray = self.get_application().tray
@@ -992,6 +1076,8 @@ class MainWindow(Adw.ApplicationWindow):
                 g.add(combo_row(title, sensors, get_setting(f"tray_{kind}_sensor", "auto"),
                                 lambda v, k=kind: (set_setting(f"tray_{k}_sensor", v), self.update_tray()),
                                 subtitle=_("Vises øverst i menyen til ikonet i statusfeltet")))
+        self.build_safety_settings(page)
+        self.build_alert_settings(page)
         self.build_mcp_settings(page)
         self.build_update_settings(page)
         g = Adw.PreferencesGroup(title=_("Tjeneste"))
@@ -1017,7 +1103,6 @@ class MainWindow(Adw.ApplicationWindow):
             btn.connect("clicked", lambda *_a: (dlg.close(), self.uninstall()))
             row.add_suffix(btn)
             g.add(row)
-        self.apply_view()
         dlg.present(self)
 
     def build_mcp_settings(self, page):
@@ -1028,17 +1113,11 @@ class MainWindow(Adw.ApplicationWindow):
                           "under håndheves av Vifte og kan ikke overstyres av Claude."))
         page.add(g)
         enable = switch_row(_("Tillat styring fra Claude"), safety.get("mcp_enabled"), self.set_mcp_enabled,
-                            _("Nødmodus er alltid på mens dette er slått på"))
+                            _("Nødmodus og sikring ved sensortap er alltid på mens dette er slått på"))
         g.add(enable)
         g.add(spin_row(_("Laveste viftehastighet (%)"), safety.get("floor", 25), 10, 60, 1,
                        lambda v: self.call("settings", mcp_floor=v),
                        subtitle=_("Claude kan aldri sette en vifte lavere enn dette, og aldri stoppe den")))
-        g.add(spin_row(_("Nødtemperatur (°C)"), safety.get("failsafe_temp", 95), 70, 105, 1,
-                       lambda v: self.call("settings", failsafe_temp=v),
-                       subtitle=_("Når CPU eller GPU når denne temperaturen, går alle styrte vifter på 100 %")))
-        g.add(switch_row(_("Nødmodus også uten Claude"), safety.get("failsafe_enabled"),
-                         lambda v: self.call("settings", failsafe_enabled=v),
-                         _("Bruk nødtemperaturen selv om Claude-tilgang er av")))
         row = Adw.ActionRow(title=_("Koble til Claude Code"), subtitle="claude mcp add --scope user vifte -- vifte mcp")
         row.set_subtitle_selectable(True)
         if shutil.which("claude"):
@@ -1046,6 +1125,91 @@ class MainWindow(Adw.ApplicationWindow):
             btn.connect("clicked", lambda *_a: self.register_claude_code())
             row.add_suffix(btn)
         g.add(row)
+
+    def build_safety_settings(self, page):
+        safety = self.model.state.get("safety") or {}
+        g = Adw.PreferencesGroup(title=_("Sikkerhet"),
+                                 description=_("Begge er alltid på mens Claude-tilgang er slått på."))
+        page.add(g)
+        g.add(switch_row(_("Nødmodus"), safety.get("failsafe_enabled"),
+                         lambda v: self.call("settings", failsafe_enabled=v),
+                         _("Når CPU eller GPU når nødtemperaturen, går alle styrte vifter på 100 %")))
+        g.add(spin_row(_("Nødtemperatur (°C)"), safety.get("failsafe_temp", 95), 70, 105, 1,
+                       lambda v: self.call("settings", failsafe_temp=v)))
+        g.add(switch_row(_("Sikring ved sensortap"), safety.get("sensor_lost_enabled", True),
+                         lambda v: self.call("settings", sensor_lost_enabled=v),
+                         _("Hvis sensoren til en kurve slutter å svare, går viftene på hastigheten under "
+                           "til den er tilbake")))
+        g.add(spin_row(_("Hastighet ved sensortap (%)"), safety.get("sensor_lost_speed", 80), 30, 100, 5,
+                       lambda v: self.call("settings", sensor_lost_speed=v)))
+
+    def build_alert_settings(self, page):
+        from ..i18n import get_setting, set_setting
+        safety = self.model.state.get("safety") or {}
+        top = int(safety.get("failsafe_temp", 95)) - 1
+        g = Adw.PreferencesGroup(
+            title=_("Varsler"),
+            description=_("Skrivebordsvarsel når en sensor har vært over grensen i 10 sekunder, og når "
+                          "nødmodus slår inn eller en sensor slutter å svare. Krever at Vifte kjører, "
+                          "for eksempel i statusfeltet."))
+        page.add(g)
+        rows = []
+
+        def rules():
+            return [dict(r) for r in get_setting("alerts", []) or []]
+
+        def rebuild():
+            for r in rows:
+                g.remove(r)
+            rows.clear()
+            choices = self.model.temp_choices()
+            for n, rule in enumerate(rules()):
+                row = combo_row(_("Varsel {}").format(n + 1), choices, rule.get("sensor"),
+                                lambda v, n=n: edit(n, sensor=v))
+                adj = Gtk.Adjustment(value=min(float(rule.get("temp", 85)), top), lower=40, upper=top,
+                                     step_increment=1, page_increment=5)
+                spin = Gtk.SpinButton(adjustment=adj, valign=Gtk.Align.CENTER)
+                spin.connect("value-changed", lambda sb, n=n: edit(n, temp=int(sb.get_value())))
+                row.add_suffix(spin)
+                row.add_suffix(Gtk.Label(label="°C"))
+                rm = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
+                                tooltip_text=_("Fjern varsel"))
+                rm.add_css_class("flat")
+                rm.connect("clicked", lambda *_a, n=n: remove(n))
+                row.add_suffix(rm)
+                g.add(row)
+                rows.append(row)
+            add = Adw.ActionRow(title=_("Legg til varsel"))
+            btn = Gtk.Button(icon_name="list-add-symbolic", valign=Gtk.Align.CENTER,
+                             tooltip_text=_("Legg til varsel"))
+            btn.add_css_class("flat")
+            btn.connect("clicked", lambda *_a: append())
+            add.add_suffix(btn)
+            add.set_activatable_widget(btn)
+            g.add(add)
+            rows.append(add)
+
+        def edit(n, **kw):
+            r = rules()
+            r[n].update(kw)
+            set_setting("alerts", r)
+
+        def remove(n):
+            r = rules()
+            del r[n]
+            set_setting("alerts", r)
+            GLib.idle_add(lambda: rebuild() and False)
+
+        def append():
+            choices = [c[0] for c in self.model.temp_choices()]
+            cpu = self.auto_tray_sensor("cpu")
+            sensor = next((c for c in choices if self.model.local_id(c) == cpu), choices[0] if choices else None)
+            set_setting("alerts", rules() + [{"sensor": sensor, "temp": min(85, top)}])
+            rebuild()
+
+        g.add(switch_row(_("Skrivebordsvarsler"), get_setting("alerts_enabled", False),
+                         lambda v: set_setting("alerts_enabled", v)))
+        rebuild()
 
     def build_update_settings(self, page):
         from ..i18n import set_setting
@@ -1198,6 +1362,9 @@ class App(Adw.Application):
         # ikonene følger med pakken, så de finnes også når programmet kjøres fra kildekoden
         Gtk.IconTheme.get_for_display(display).add_search_path(ICON_DIR)
         Gtk.Window.set_default_icon_name(APP_ID)
+        show = Gio.SimpleAction.new("show-window", None)
+        show.connect("activate", lambda *_a: self.show_window())
+        self.add_action(show)
         self.updates = UpdateManager(self)
         self.updates.start_auto()
         try:

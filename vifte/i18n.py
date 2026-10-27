@@ -129,15 +129,10 @@ EN = {
         "Let Claude read sensors and tune curves and fans for you. The safety limits below are enforced by "
         "Vifte and cannot be overridden by Claude.",
     "Tillat styring fra Claude": "Allow control from Claude",
-    "Nødmodus er alltid på mens dette er slått på": "Emergency mode is always on while this is enabled",
     "Laveste viftehastighet (%)": "Lowest fan speed (%)",
     "Claude kan aldri sette en vifte lavere enn dette, og aldri stoppe den":
         "Claude can never set a fan lower than this, and never stop it",
     "Nødtemperatur (°C)": "Emergency temperature (°C)",
-    "Når CPU eller GPU når denne temperaturen, går alle styrte vifter på 100 %":
-        "When the CPU or GPU reaches this temperature, all controlled fans run at 100 %",
-    "Nødmodus også uten Claude": "Emergency mode without Claude too",
-    "Bruk nødtemperaturen selv om Claude-tilgang er av": "Use the emergency temperature even when Claude access is off",
     "Koble til Claude Code": "Connect to Claude Code",
     "Legg til": "Add",
     "Claude-tilgang er slått av": "Claude access is turned off",
@@ -354,6 +349,27 @@ EN = {
     "Manglende sensorer:": "Missing sensors:",
     "Får ikke kontakt med vifted ({}): {}\nStart tjenesten: sudo systemctl start vifted":
         "Cannot reach vifted ({}): {}\nStart the service: sudo systemctl start vifted",
+    "Siste {} min: {} – {}": "Last {} min: {} – {}",
+    "Sensor svarer ikke: {} – {} vifte(r) går på {} %": "Sensor not responding: {} – {} fan(s) running at {} %",
+    "{} er {}": "{} is {}",
+    "Over varslingsgrensen på {}": "Above the alert limit of {}",
+    "Nødmodus: alle styrte vifter går på 100 %": "Emergency mode: all controlled fans run at 100 %",
+    "Sensor svarer ikke": "Sensor not responding",
+    "{} – {} vifte(r) går på {} %": "{} – {} fan(s) running at {} %",
+    "Nødmodus og sikring ved sensortap er alltid på mens dette er slått på": "Emergency mode and sensor loss protection are always on while this is enabled",
+    "Sikkerhet": "Safety",
+    "Begge er alltid på mens Claude-tilgang er slått på.": "Both are always on while Claude access is enabled.",
+    "Nødmodus": "Emergency mode",
+    "Når CPU eller GPU når nødtemperaturen, går alle styrte vifter på 100 %": "When the CPU or GPU reaches the emergency temperature, all controlled fans run at 100 %",
+    "Sikring ved sensortap": "Sensor loss protection",
+    "Hvis sensoren til en kurve slutter å svare, går viftene på hastigheten under til den er tilbake": "If a curve's sensor stops responding, its fans run at the speed below until it is back",
+    "Hastighet ved sensortap (%)": "Speed on sensor loss (%)",
+    "Varsler": "Alerts",
+    "Skrivebordsvarsel når en sensor har vært over grensen i 10 sekunder, og når nødmodus slår inn eller en sensor slutter å svare. Krever at Vifte kjører, for eksempel i statusfeltet.": "Desktop notification when a sensor has been above its limit for 10 seconds, and when emergency mode starts or a sensor stops responding. Vifte must be running, for example in the system tray.",
+    "Varsel {}": "Alert {}",
+    "Fjern varsel": "Remove alert",
+    "Legg til varsel": "Add alert",
+    "Skrivebordsvarsler": "Desktop notifications",
 }
 
 _lang = None

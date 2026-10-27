@@ -417,8 +417,13 @@ class McpApi:
                 "paused": e.paused,
                 "safety": {"floor_percent": self.floor, "emergency_temperature": self.emergency,
                            "emergency_active": e.failsafe_active, "emergency_trigger": e.failsafe_trigger,
+                           "sensor_lost_protection": e.sensor_lost_enabled,
+                           "sensor_lost_speed_percent": e.sensor_lost_speed,
+                           "controls_with_lost_sensor": snap["sensor_lost"]["controls"],
                            "rules": "Fans you configure can never go below floor_percent; curves must rise "
-                                    "and reach 100 % by emergency_temperature; above it all fans run at 100 %."},
+                                    "and reach 100 % by emergency_temperature; above it all fans run at 100 %. "
+                                    "If a curve's sensor stops responding, its fans run at "
+                                    "sensor_lost_speed_percent until it is back."},
                 "controls": controls, "curves": curves, "temperatures": temps, "fans": fans,
                 "custom_sensors": custom, "missing_hardware": snap["missing"],
             }

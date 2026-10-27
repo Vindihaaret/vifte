@@ -108,6 +108,10 @@ class Engine:
         self.failsafe_temp = 95.0
         self.failsafe_active = False
         self.failsafe_trigger = None   # (sensor-id, temperatur)
+        # Sensortap: svarer ikke temperaturen til en kurve, går viftene på denne hastigheten.
+        self.sensor_lost_enabled = True
+        self.sensor_lost_speed = 80.0
+        self._lost_since = {}          # kontroll-id -> når sensoren forsvant
 
     def _index(self):
         self.by_id = {}
@@ -239,6 +243,40 @@ class Engine:
         return v
 
     sensor_dir = "/var/lib/vifte/sensors"
+
+    def lost_sources(self, ref, depth=0):
+        """Sensorene bak en temperaturkilde som ikke gir verdi nå (tom liste = alt i orden).
+        En mix-sensor regnes som tapt hvis én av sensorene den bygger på er borte, selv om
+        de andre fortsatt svarer – den manglende kunne vært den varmeste."""
+        ident = ref.get("Identifier") if isinstance(ref, dict) else ref
+        if not ident or depth > 8:
+            return []
+        if is_custom(ident):
+            full = next((x for x in self.cfg.custom_sensors if x.get("Identifier") == ident), None)
+            if full is None:
+                return [ident]
+            kind = custom_sensor_type(full)
+            if kind == "mix":
+                return [i for sub in full.get("SelectedSensors") or [] for i in self.lost_sources(sub, depth + 1)]
+            if kind in ("time", "offset"):
+                return self.lost_sources(full.get("SelectedTempSource"), depth + 1)
+            return [ident] if self.custom_values.get(ident) is None else []
+        s = self.resolve(ident)
+        if s is None or s.value is None or (isinstance(s.value, float) and math.isnan(s.value)):
+            return [ident]
+        return []
+
+    def curve_lost(self, ref, stack=()):
+        c = self.cfg.resolve_curve(ref)
+        if c is None or c.get("Name") in stack:
+            return []
+        kind = curve_type(c)
+        if kind == "mix":
+            return [i for r in c.get("SelectedFanCurves") or []
+                    for i in self.curve_lost(r, stack + (c.get("Name"),))]
+        if kind in ("flat", "sync"):
+            return []
+        return self.lost_sources(c.get("SelectedTempSource"))
 
     # ------------------------------------------------------------ kurver
     def curve_value(self, ref, now, stack=()):
@@ -401,10 +439,30 @@ class Engine:
             if not ctl_cfg.get("Enable") or self.paused:
                 if ctl.taken:
                     ctl.release()
-                state["out"] = state["target"] = None
+                state["out"] = state["target"] = state["lost"] = None
+                self._lost_since.pop(ident, None)
                 continue
 
             curve = self.cfg.resolve_curve(ctl_cfg.get("SelectedFanCurve"))
+            lost = [] if ctl_cfg.get("ManualControl") or curve is None else \
+                self.curve_lost(ctl_cfg.get("SelectedFanCurve"))
+            if lost:
+                since = self._lost_since.setdefault(ident, now)
+            else:
+                self._lost_since.pop(ident, None)
+                if state.get("lost"):
+                    log.warning("%s: sensoren svarer igjen, vanlig styring", ident)
+            # Bare vifter Vifte allerede styrte; en sensor som aldri har virket lar BIOS styre.
+            if lost and self.sensor_lost_enabled and state["out"] is not None \
+                    and now - since >= self.SENSOR_LOST_AFTER:
+                if not state.get("lost"):
+                    log.warning("%s: sensor borte (%s), setter %.0f %%", ident, ", ".join(lost),
+                                self.sensor_lost_speed)
+                state["lost"] = sorted(set(lost))
+                self._apply(ctl, self.sensor_lost_speed, True)
+                state["out"] = state["target"] = self.sensor_lost_speed
+                continue
+            state["lost"] = None
             if ctl_cfg.get("ManualControl"):
                 target = float(ctl_cfg.get("ManualControlValue", 50))
             elif curve is not None:
@@ -430,6 +488,7 @@ class Engine:
         return now
 
     FAILSAFE_HYSTERESIS = 7.0
+    SENSOR_LOST_AFTER = 5.0   # sekunder uten verdi før sensoren regnes som borte
 
     def failsafe_sensors(self):
         """Kjernetemperaturer for CPU og GPU. NVMe, RAM o.l. er med vilje utelatt, og for
@@ -522,5 +581,7 @@ class Engine:
                 "resolved": resolved,
                 "failsafe": {"enabled": self.failsafe_enabled, "temp": self.failsafe_temp,
                              "active": self.failsafe_active, "trigger": self.failsafe_trigger},
+                "sensor_lost": {"enabled": self.sensor_lost_enabled, "speed": self.sensor_lost_speed,
+                                "controls": {k: v["lost"] for k, v in self.control_state.items() if v.get("lost")}},
                 "control_state": cstate, "missing": self.missing_identifiers(),
                 "aliases": self.aliases, "dry_run": self.dry_run, "paused": self.paused}

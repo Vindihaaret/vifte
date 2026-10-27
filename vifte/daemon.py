@@ -61,7 +61,7 @@ class Daemon:
         self.state_file = os.path.join(data_dir, "state.json")
         self.settings = {"current": "userConfig.json", "interval": 1.0, "aliases": {},
                          "mcp_enabled": False, "mcp_floor": 25, "failsafe_enabled": False,
-                         "failsafe_temp": 95}
+                         "failsafe_temp": 95, "sensor_lost_enabled": True, "sensor_lost_speed": 80}
         try:
             with open(self.state_file) as f:
                 self.settings.update(json.load(f))
@@ -87,18 +87,25 @@ class Daemon:
         return os.path.join(self.conf_dir, safe_name(name))
 
     def apply_safety(self):
-        """Nødmodus er alltid på når Claude (MCP) har tilgang."""
+        """Nødmodus og sensortap-sikring er alltid på når Claude (MCP) har tilgang."""
         st = self.settings
+        mcp = bool(st.get("mcp_enabled"))
         st["mcp_floor"] = int(max(10, min(60, float(st.get("mcp_floor", 25)))))
         st["failsafe_temp"] = float(max(70, min(105, float(st.get("failsafe_temp", 95)))))
-        self.engine.failsafe_enabled = bool(st.get("failsafe_enabled")) or bool(st.get("mcp_enabled"))
+        st["sensor_lost_speed"] = int(max(30, min(100, float(st.get("sensor_lost_speed", 80)))))
+        self.engine.failsafe_enabled = bool(st.get("failsafe_enabled")) or mcp
         self.engine.failsafe_temp = st["failsafe_temp"]
+        self.engine.sensor_lost_enabled = bool(st.get("sensor_lost_enabled", True)) or mcp
+        self.engine.sensor_lost_speed = float(max(st["sensor_lost_speed"], st["mcp_floor"] if mcp else 0))
 
     def safety(self):
         st = self.settings
         return {"mcp_enabled": bool(st.get("mcp_enabled")), "floor": st["mcp_floor"],
                 "failsafe_enabled": bool(st.get("failsafe_enabled")),
-                "failsafe_effective": self.engine.failsafe_enabled, "failsafe_temp": st["failsafe_temp"]}
+                "failsafe_effective": self.engine.failsafe_enabled, "failsafe_temp": st["failsafe_temp"],
+                "sensor_lost_enabled": bool(st.get("sensor_lost_enabled", True)),
+                "sensor_lost_effective": self.engine.sensor_lost_enabled,
+                "sensor_lost_speed": st["sensor_lost_speed"]}
 
     def log_mcp(self, template, *args):
         self._mcp_log_id += 1
@@ -133,7 +140,11 @@ class Daemon:
         for ident, st in e.control_state.items():
             if st.get("found"):
                 controls[ident] = [st.get("out"), None if st.get("rpm") is None else round(st["rpm"])]
-        self.history.append({"t": round(now), "temps": temps, "controls": controls})
+        # Alle sensorer (for grafene i appen); "temps" over er det utvalget Claude får.
+        sensors = {s.id: round(s.value, 1) for s in e.sensors
+                   if s.value is not None and not (isinstance(s.value, float) and s.value != s.value)}
+        sensors.update({k: round(v, 1) for k, v in e.custom_values.items() if v is not None})
+        self.history.append({"t": round(now), "temps": temps, "controls": controls, "sensors": sensors})
 
     def save_settings(self):
         self.settings["aliases"] = self.engine.aliases
@@ -458,15 +469,25 @@ class Daemon:
                     e.interval = max(0.25, min(10.0, float(req["interval"])))
                 if "paused" in req:
                     e.paused = bool(req["paused"])
-                for key in ("mcp_enabled", "failsafe_enabled"):
+                for key in ("mcp_enabled", "failsafe_enabled", "sensor_lost_enabled"):
                     if key in req:
                         self.settings[key] = bool(req[key])
-                for key in ("mcp_floor", "failsafe_temp"):
+                for key in ("mcp_floor", "failsafe_temp", "sensor_lost_speed"):
                     if key in req:
                         self.settings[key] = float(req[key])
                 self.apply_safety()
             self.save_settings()
             return {"safety": self.safety()}
+        if cmd == "history":
+            with self.lock:
+                rows = list(self.history)
+            ids = req.get("ids")
+            series = {}
+            for i, r in enumerate(rows):
+                for k, v in (r.get("sensors") or {}).items():
+                    if ids is None or k in ids:
+                        series.setdefault(k, [None] * len(rows))[i] = v
+            return {"t": [r["t"] for r in rows], "series": series}
         if cmd == "mcp_tools":
             return {"tools": self.mcp.tools()}
         if cmd == "mcp_call":

@@ -134,6 +134,8 @@ however Claude connects:
   temperature*. Hysteresis and response times are capped so fans react quickly to heat.
 * **Emergency mode is always on** while Claude has access: if a CPU or GPU core temperature reaches the
   emergency temperature (default 95 °C), every controlled fan runs at 100 % until it has cooled 7 °C.
+* **Sensor loss protection is always on** while Claude has access, and never below the lowest fan speed:
+  if a curve's sensor stops responding, its fans run at the chosen speed until it is back.
 * **Limited reach.** Claude can't delete or import configurations, overwrite an existing configuration,
   pause fan control, change the update interval or the safety limits, or uninstall anything. Handing a
   fan back to the BIOS is always allowed.
@@ -190,9 +192,30 @@ tray icon is active, closing the window keeps Vifte in the tray. The icon starts
 off under **Settings → System tray**). GNOME needs the *AppIndicator and KStatusNotifierItem Support*
 extension; KDE and most other desktops support it out of the box.
 
-**Emergency mode:** under **Settings → Claude (MCP)** you can also turn on emergency mode without
-giving Claude access. Above the emergency temperature all controlled fans run at 100 %, and a red banner
-shows which sensor triggered it.
+**Emergency mode:** turn it on under **Settings → Safety**. When a CPU or GPU core temperature reaches
+the emergency temperature (default 95 °C), all controlled fans run at 100 % until it has cooled 7 °C, and
+a red banner shows which sensor triggered it.
+
+**Sensor loss protection:** if the sensor behind a curve stops responding for 5 seconds (for example if
+the NVIDIA driver fails or a hwmon driver is unloaded), the fans using that curve run at a fixed speed
+(default 80 %) instead of staying at their last value, and a red banner names the sensor. Normal control
+resumes as soon as the sensor is back. A mix sensor counts as lost if any of its sensors is missing, since
+the missing one could be the hottest. Fans whose sensor never worked are left to the BIOS. On by default;
+the switch and the speed are under **Settings → Safety**.
+
+**Alerts:** optional desktop notifications, turned on under **Settings → Alerts**. Add one or more
+sensors with a limit below the emergency temperature; you get a notification when a sensor has stayed
+above its limit for 10 seconds, and not again until it has dropped 3 °C below it. With alerts on, you
+also get a notification when emergency mode starts or a sensor stops responding. Vifte must be running
+(for example in the system tray) for notifications to appear.
+
+**History graphs:** every sensor card shows a small graph of the last 30 minutes, with the lowest and
+highest value. Useful when tuning curves by hand.
+
+**Suspend and resume:** after the PC wakes from sleep or hibernation, Vifte takes the fans back by
+itself. Some hwmon drivers reset `pwm_enable` on resume, which silently hands the fans to the BIOS; Vifte
+checks the mode before every write and sets manual mode again if it was lost, and `vifte-resume.service`
+also restarts the service after resume.
 
 **Quit:** **Menu → Quit** (Ctrl+Q) closes the window and the tray icon. The service keeps controlling the
 fans. To hand the fans back to the BIOS, use **Menu → Pause control**.
@@ -251,11 +274,11 @@ vifte uninstall [--purge]  uninstall (--purge also deletes the configurations)
 | Path | Contents |
 |---|---|
 | `/var/lib/vifte/Configurations/*.json` | the configurations (FanControl format) |
-| `/var/lib/vifte/state.json` | active configuration, update interval and sensor mappings |
+| `/var/lib/vifte/state.json` | active configuration, update interval, sensor mappings and safety settings |
 | `/var/lib/vifte/sensors/` | default folder for file sensors |
 | `/run/vifte/vifte.sock` | socket between the GUI and the service |
 | `/var/lib/vifte/Configurations/backups/` | backups made before Claude saves |
-| `~/.config/vifte/settings.json` | per-user settings (language) |
+| `~/.config/vifte/settings.json` | per-user settings (language, tray, alerts, update checks) |
 
 ## Development
 
