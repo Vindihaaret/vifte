@@ -117,15 +117,6 @@ T = {
     "Connect to Claude Code": "Mit Claude Code verbinden",
     "Add": "Hinzufügen",
     "Claude access is turned off": "Claude-Zugriff ist ausgeschaltet",
-    "Claude access is turned on": "Claude-Zugriff ist eingeschaltet",
-    "Claude can now read sensors and change curves and fans within the safety limits. No restart is needed.\n\n"
-    "Changes take effect immediately but are only saved when you ask for it. You'll see a notification here for "
-    "every change Claude makes.\n\nConnect Vifte to Claude Code with:\nclaude mcp add --scope user vifte -- vifte mcp":
-        "Claude kann jetzt Sensoren lesen und Kurven und Lüfter innerhalb der Sicherheitsgrenzen ändern. Ein "
-        "Neustart ist nicht nötig.\n\nÄnderungen wirken sofort, werden aber erst gespeichert, wenn Sie es "
-        "wünschen. Für jede Änderung von Claude erscheint hier eine Benachrichtigung.\n\nVifte mit Claude Code "
-        "verbinden:\nclaude mcp add --scope user vifte -- vifte mcp",
-    "Add to Claude Code": "Zu Claude Code hinzufügen",
     "Vifte was added to Claude Code. Start a new Claude Code session to use it.":
         "Vifte wurde zu Claude Code hinzugefügt. Starten Sie eine neue Claude-Code-Sitzung, um es zu verwenden.",
     "Created curve “{}”": "Kurve „{}“ erstellt",
@@ -374,4 +365,26 @@ T = {
     "Pump – fixed speed": "Pumpe – feste Drehzahl",
     "the control was not found on this machine": "die Steuerung wurde auf diesem Rechner nicht gefunden",
     "a pump can't be calibrated": "eine Pumpe kann nicht kalibriert werden",
+    "Speeds use the fan's name":
+        "Drehzahlen verwenden den Lüfternamen",
+    "A speed sensor without its own name is shown with the name of the fan it is paired with":
+        "Ein Drehzahlsensor ohne eigenen Namen wird mit dem Namen des zugeordneten Lüfters angezeigt",
+    "Claude access is on. Changes are only saved when you ask for it.":
+        "Claude-Zugriff ist eingeschaltet. Änderungen werden erst gespeichert, wenn du es verlangst.",
+    "Claude is an AI and can make mistakes. Keep an eye on temperatures and fan speeds after every change Claude makes, and always check the result yourself.":
+        "Claude ist eine KI und kann Fehler machen. Behalte Temperaturen und Lüfterdrehzahlen nach jeder Änderung von Claude im Blick und prüfe das Ergebnis immer selbst.",
+    "Vifte enforces the safety limits regardless: controlled fans never go below the lowest speed, emergency mode and sensor loss protection are always on, and changes are only saved when you ask for it.":
+        "Vifte setzt die Sicherheitsgrenzen in jedem Fall durch: Gesteuerte Lüfter laufen nie unter der niedrigsten Drehzahl, Notfallmodus und Schutz bei Sensorausfall sind immer aktiv, und Änderungen werden erst gespeichert, wenn du es verlangst.",
+    "Marked as pump: {}. Claude can't change it.":
+        "Als Pumpe markiert: {}. Claude kann sie nicht ändern.",
+    "If you have an AIO or other water cooling, mark the pump before turning on Claude: the gear on the pump's card → Type → Pump. Then neither Claude nor automatic functions can change it, and the pump can't be set too low.":
+        "Wenn du eine AIO oder andere Wasserkühlung hast, markiere die Pumpe, bevor du Claude einschaltest: Zahnrad auf der Karte der Pumpe → Typ → Pumpe. Dann können weder Claude noch automatische Funktionen sie ändern, und die Pumpe kann nicht zu niedrig eingestellt werden.",
+    "Turn on Claude access?":
+        "Claude-Zugriff einschalten?",
+    "Mark the pump first":
+        "Zuerst die Pumpe markieren",
+    "Turn on":
+        "Einschalten",
+    "Click the gear on the pump's card and choose Type → Pump":
+        "Klicke auf das Zahnrad auf der Karte der Pumpe und wähle Typ → Pumpe",
 }

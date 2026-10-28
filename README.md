@@ -106,7 +106,10 @@ system behaves over time, and save the result when you are happy.
 
 ### Turn it on
 
-1. In Vifte: **Settings → Claude → Allow control from Claude**. No restart is needed.
+1. In Vifte: **Settings → Claude → Allow control from Claude**. No restart is needed. Before access is
+   turned on, Vifte reminds you that Claude is an AI and can make mistakes – keep an eye on temperatures
+   and check the result yourself – and, if no pump is marked, recommends marking your AIO or custom-loop
+   pump first (**Mark the pump first** takes you there).
 2. Connect it to Claude Code – click **Add** in the same section, or run:
 
    ```bash
@@ -189,6 +192,10 @@ start/stop), hide/show, rename.
 hysteresis at min/max, one-way hysteresis (older files), RPM mode (requires calibration).
 
 **Custom sensors:** Mix, time average, file (`.sensor`, first line = °C), offset.
+
+**Names:** a speed sensor you haven't named is shown with the name of the fan it is paired with (for
+example *AIO Pump* instead of *Fan #7*). This is display only – the configuration file keeps its own names,
+as on Windows – and can be turned off under **Settings → General → Speeds use the fan's name**.
 
 **Other:** multiple configurations (profiles) with quick switching, Fahrenheit (**Settings → General**), show hidden cards, hide
 fan speed cards, update interval, pause (BIOS takes over).

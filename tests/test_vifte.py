@@ -754,6 +754,34 @@ class AlertTests(unittest.TestCase):
         self.assertEqual(a.check(2, [], dict().get, True, [FAN0]), [])
 
 
+class PairedNameTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            from vifte.gui.common import Model
+        except Exception as ex:  # uten GTK
+            self.skipTest(f"GTK not available: {ex}")
+        e, _ = make_engine()
+        cfg = FanControlConfig()
+        cfg.ensure_hardware([{"id": s.id, "name": s.name, "kind": s.kind} for s in e.sensors],
+                            [{"id": c.id, "name": c.name} for c in e.controls])
+        cfg.control(FAN1).update(NickName="AIO Pumpe", PairedFanSensor={"Identifier": "/lpc/nct6798d/fan/1"})
+        self.m = Model(None)
+        self.m.cfg = cfg
+        self.m.names_follow_pairing = True
+
+    def test_speed_sensor_shows_the_paired_fans_name(self):
+        self.assertEqual(self.m.display_name("/lpc/nct6798d/fan/1"), "AIO Pumpe")
+        self.assertEqual(self.m.display_name("/lpc/nct6798d/fan/0"), "Fan #1", "not paired")
+        self.assertEqual(self.m.cfg.sensor_entry("/lpc/nct6798d/fan/1")["NickName"], "Fan #2", "display only")
+
+    def test_own_name_wins_and_setting_can_turn_it_off(self):
+        self.m.cfg.sensor_entry("/lpc/nct6798d/fan/1")["NickName"] = "Pumpe RPM"
+        self.assertEqual(self.m.display_name("/lpc/nct6798d/fan/1"), "Pumpe RPM")
+        self.m.cfg.sensor_entry("/lpc/nct6798d/fan/1")["NickName"] = "Fan #2"
+        self.m.names_follow_pairing = False
+        self.assertEqual(self.m.display_name("/lpc/nct6798d/fan/1"), "Fan #2")
+
+
 class TranslationTests(unittest.TestCase):
     def test_other_languages_are_complete_and_keep_placeholders(self):
         from vifte import i18n

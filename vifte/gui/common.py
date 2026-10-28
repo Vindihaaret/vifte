@@ -1,4 +1,6 @@
 """Felles hjelpere for GUI-et: modellen (tjenestetilstand + konfigurasjon) og små widgets."""
+import re
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -6,7 +8,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from ..config import FanControlConfig  # noqa: E402
-from ..i18n import _  # noqa: E402
+from ..i18n import _, get_setting  # noqa: E402
 
 
 class Model:
@@ -20,6 +22,8 @@ class Model:
         self.rev = -1
         self.name = ""
         self.history = {"t": [], "series": {}}
+        # Hastighetsmålere uten eget navn vises med navnet til viften de er paret med (kan slås av).
+        self.names_follow_pairing = bool(get_setting("names_follow_pairing", True))
 
     # ---- konfigurasjon
     def fetch_config(self):
@@ -66,6 +70,39 @@ class Model:
         vals = series.get(config_id) or series.get(self.local_id(config_id)) or []
         return self.history.get("t") or [], vals
 
+    def own_name(self, entry):
+        """Navnet brukeren har gitt, eller None. FanControl lagrer også maskinvarenavnet
+        («Fan #7») som NickName, så et navn regnes som eget bare når det er noe annet."""
+        nick = entry.get("NickName")
+        if not nick:
+            return None
+        lid = self.local_id(entry.get("Identifier"))
+        hw = {x.get("name") for x in self.state.get("sensors", []) + self.state.get("controls", [])
+              if x.get("id") == lid}
+        if nick in hw | {entry.get("Name")} or re.fullmatch(r"(fan|control|pump|sensor)\s*#?\s*\d+", nick.lower()):
+            return None
+        return nick
+
+    def paired_control_name(self, ident):
+        """Navnet til kontrollen en hastighetsmåler er paret med, hvis den har fått et navn."""
+        local = self.local_id(ident)
+        for c in self.cfg.controls:
+            ref = ((c.get("PairedFanSensor") or c.get("MatchingFanSensor") or {}).get("Identifier"))
+            if ref and (ref == ident or self.local_id(ref) == local) and self.own_name(c):
+                return self.own_name(c)
+        return None
+
+    def display_name(self, ident, default=None):
+        """Navnet som vises i appen. Bare til visning – skrives aldri inn i konfigurasjonen, så
+        filene forblir som i FanControl på Windows."""
+        e = self.cfg.sensor_entry(ident)
+        if (self.names_follow_pairing and e is not None and not self.own_name(e)
+                and any(f is e for f in self.cfg.fan_sensors)):
+            name = self.paired_control_name(ident)
+            if name:
+                return name
+        return self.cfg.display_name(ident, default)
+
     def fmt_temp(self, v):
         if v is None:
             return "–"
@@ -93,7 +130,7 @@ class Model:
             ident = e.get("Identifier")
             s = self.sensor(ident)
             hwname = s["hardware"] if s else _("Mangler")
-            out.append((ident, f"{hwname} / {e.get('NickName') or e.get('Name') or ident}"))
+            out.append((ident, f"{hwname} / {self.display_name(ident)}"))
         return out
 
 

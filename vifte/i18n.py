@@ -136,16 +136,6 @@ EN = {
     "Koble til Claude Code": "Connect to Claude Code",
     "Legg til": "Add",
     "Claude-tilgang er slått av": "Claude access is turned off",
-    "Claude-tilgang er slått på": "Claude access is turned on",
-    "Claude kan nå lese sensorer og endre kurver og vifter innenfor sikkerhetsgrensene. Ingen omstart er "
-    "nødvendig.\n\nEndringer tas i bruk med en gang, men lagres først når du ber om det. Du ser et varsel her "
-    "for hver endring Claude gjør.\n\nKoble Vifte til Claude Code med:\nclaude mcp add --scope user vifte -- "
-    "vifte mcp":
-        "Claude can now read sensors and change curves and fans within the safety limits. No restart is "
-        "needed.\n\nChanges take effect immediately but are only saved when you ask for it. You'll see a "
-        "notification here for every change Claude makes.\n\nConnect Vifte to Claude Code with:\n"
-        "claude mcp add --scope user vifte -- vifte mcp",
-    "Legg til i Claude Code": "Add to Claude Code",
     "Vifte er lagt til i Claude Code. Start en ny Claude Code-økt for å bruke den.":
         "Vifte was added to Claude Code. Start a new Claude Code session to use it.",
     # --- logg over Claude sine endringer
@@ -391,6 +381,28 @@ EN = {
     "Pumpe – fast hastighet": "Pump – fixed speed",
     "fant ikke kontrollen på denne maskinen": "the control was not found on this machine",
     "en pumpe kan ikke kalibreres": "a pump can't be calibrated",
+    "Hastigheter bruker viftenavnet":
+        "Speeds use the fan's name",
+    "En hastighetsmåler uten eget navn vises med navnet til viften den er paret med":
+        "A speed sensor without its own name is shown with the name of the fan it is paired with",
+    "Claude-tilgang er slått på. Endringer lagres først når du ber om det.":
+        "Claude access is on. Changes are only saved when you ask for it.",
+    "Claude er en KI og kan ta feil. Følg med på temperaturer og viftehastigheter etter hver endring Claude gjør, og kontroller alltid resultatet selv.":
+        "Claude is an AI and can make mistakes. Keep an eye on temperatures and fan speeds after every change Claude makes, and always check the result yourself.",
+    "Vifte håndhever sikkerhetsgrensene uansett: styrte vifter går aldri under laveste hastighet, nødmodus og sikring ved sensortap er alltid på, og endringer lagres først når du ber om det.":
+        "Vifte enforces the safety limits regardless: controlled fans never go below the lowest speed, emergency mode and sensor loss protection are always on, and changes are only saved when you ask for it.",
+    "Merket som pumpe: {}. Claude kan ikke endre den.":
+        "Marked as pump: {}. Claude can't change it.",
+    "Har du AIO eller annen vannkjøling, bør du merke pumpen før du slår på Claude: tannhjulet på pumpens kort → Type → Pumpe. Da kan verken Claude eller automatiske funksjoner endre den, og du unngår at pumpen settes for lavt.":
+        "If you have an AIO or other water cooling, mark the pump before turning on Claude: the gear on the pump's card → Type → Pump. Then neither Claude nor automatic functions can change it, and the pump can't be set too low.",
+    "Slå på Claude-tilgang?":
+        "Turn on Claude access?",
+    "Merk pumpen først":
+        "Mark the pump first",
+    "Slå på":
+        "Turn on",
+    "Trykk på tannhjulet på pumpens kort og velg Type → Pumpe":
+        "Click the gear on the pump's card and choose Type → Pump",
 }
 
 _lang = None

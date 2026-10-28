@@ -606,8 +606,9 @@ class MainWindow(Adw.ApplicationWindow):
     def value_card(self, e, kind):
         m = self.model
         ident = e.get("Identifier")
-        card = Card(e.get("NickName") or e.get("Name") or ident, None, lambda: self.sensor_menu(ident),
-                    e.get("IsHidden"))
+        name = m.display_name(ident)
+        own = e.get("NickName") or e.get("Name") or ident
+        card = Card(name, own if name != own else None, lambda: self.sensor_menu(ident), e.get("IsHidden"))
         big = Gtk.Label(label="–", xalign=0)
         big.add_css_class("vifte-big")
         card.append(big)
@@ -648,7 +649,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def sensor_menu(self, ident):
         entry = self.model.cfg.sensor_entry(ident)
-        dlg = Adw.AlertDialog(heading=entry.get("NickName") or entry.get("Name") or ident, body=ident)
+        dlg = Adw.AlertDialog(heading=self.model.display_name(ident), body=ident)
         dlg.add_response("cancel", _("Lukk"))
         dlg.add_response("hide", _("Vis") if entry.get("IsHidden") else _("Skjul"))
         dlg.add_response("rename", _("Gi nytt navn"))
@@ -667,7 +668,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self.config_changed(False)
                 self.update_tray()
             elif r == "rename":
-                RenameDialog.ask(self, _("Nytt navn"), entry.get("NickName") or entry.get("Name"),
+                RenameDialog.ask(self, _("Nytt navn"), self.model.display_name(ident),
                                  lambda v: (entry.__setitem__("NickName", v), self.config_changed(True)))
             elif r == "hide":
                 entry["IsHidden"] = not entry.get("IsHidden")
@@ -749,7 +750,7 @@ class MainWindow(Adw.ApplicationWindow):
         if fs.get("active"):
             trig = fs.get("trigger") or [None, None]
             self.banner.set_title(_("NØDMODUS: {} er {} – alle styrte vifter går på 100 %").format(
-                self.model.cfg.display_name(trig[0], trig[0]), self.model.fmt_temp(trig[1])))
+                self.model.display_name(trig[0], trig[0]), self.model.fmt_temp(trig[1])))
             self.banner.set_button_label("")
             self.banner.add_css_class("error")
             self.banner.set_revealed(True)
@@ -759,7 +760,7 @@ class MainWindow(Adw.ApplicationWindow):
         if lost:
             sensors = sorted({i for ids in lost.values() for i in ids})
             self.banner.set_title(_("Sensor svarer ikke: {} – {} vifte(r) går på {} %").format(
-                ", ".join(self.model.cfg.display_name(i, i) for i in sensors), len(lost),
+                ", ".join(self.model.display_name(i, i) for i in sensors), len(lost),
                 round((st.get("sensor_lost") or {}).get("speed", 80))))
             self.banner.set_button_label("")
             self.banner.add_css_class("error")
@@ -816,21 +817,21 @@ class MainWindow(Adw.ApplicationWindow):
         for ev in events:
             if ev[0] == "temp":
                 rule, v = ev[1], ev[2]
-                name = m.cfg.display_name(rule["sensor"], rule["sensor"])
+                name = m.display_name(rule["sensor"], rule["sensor"])
                 title = _("{} er {}").format(name, m.fmt_temp(v))
                 body = _("Over varslingsgrensen på {}").format(m.fmt_temp(float(rule["temp"])))
                 nid = "vifte-alert-" + AlertMonitor.key(rule)
             elif ev[0] == "failsafe":
                 trig = (st.get("failsafe") or {}).get("trigger") or [None, None]
                 title = _("Nødmodus: alle styrte vifter går på 100 %")
-                body = _("{} er {}").format(m.cfg.display_name(trig[0], trig[0]), m.fmt_temp(trig[1]))
+                body = _("{} er {}").format(m.display_name(trig[0], trig[0]), m.fmt_temp(trig[1]))
                 nid = "vifte-failsafe"
             else:
                 lost = (st.get("sensor_lost") or {}).get("controls") or {}
                 sensors = sorted({i for c in ev[1] for i in lost.get(c, [])})
                 title = _("Sensor svarer ikke")
                 body = _("{} – {} vifte(r) går på {} %").format(
-                    ", ".join(m.cfg.display_name(i, i) for i in sensors), len(ev[1]),
+                    ", ".join(m.display_name(i, i) for i in sensors), len(ev[1]),
                     round((st.get("sensor_lost") or {}).get("speed", 80)))
                 nid = "vifte-sensor-lost"
             n = Gio.Notification.new(title)
@@ -883,7 +884,7 @@ class MainWindow(Adw.ApplicationWindow):
                 text = f"{v / 1000:.1f}k" if v >= 1000 else f"{v:.0f}"
             else:
                 text = f"{v * 9 / 5 + 32:.0f}" if m.fahrenheit else f"{v:.0f}"
-            name = m.cfg.display_name(ident, ident)
+            name = m.display_name(ident, ident)
             tip = f"{name}: " + (m.fmt_temp(v) if kind == "temp" else ("–" if v is None else f"{v:.0f} RPM"))
             wanted[f"{n}:{ident}"] = (name, text, parse_color(t.get("Color")) or default, tip)
         tray.set_sensors(wanted)
@@ -1076,6 +1077,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.model.cfg.window["ShowHiddenCards"] = v
         self.config_changed(True)
 
+    def set_names_follow_pairing(self, on):
+        from ..i18n import set_setting
+        set_setting("names_follow_pairing", on)
+        self.model.names_follow_pairing = on
+        self.rebuild()
+        self._tray_key = None
+        self.update_tray()
+
     def set_fahrenheit(self, on):
         self.model.cfg.window["Fahrenheit"] = on
         self.config_changed(True)
@@ -1118,6 +1127,9 @@ class MainWindow(Adw.ApplicationWindow):
                         self.theme_choice(), self.set_theme))
         g.add(switch_row(_("Fahrenheit"), self.model.fahrenheit, self.set_fahrenheit,
                          _("Vis temperaturer i °F i stedet for °C")))
+        g.add(switch_row(_("Hastigheter bruker viftenavnet"), self.model.names_follow_pairing,
+                         self.set_names_follow_pairing,
+                         _("En hastighetsmåler uten eget navn vises med navnet til viften den er paret med")))
         g.add(switch_row(_("Skjul hastighetskort"), w.get("HideFanSpeedCards"),
                          lambda v: (w.__setitem__("HideFanSpeedCards", v), self.apply_view())))
         self.build_update_settings(page)
@@ -1149,8 +1161,11 @@ class MainWindow(Adw.ApplicationWindow):
             description=_("La Claude lese sensorer og justere kurver og vifter for deg. Sikkerhetsgrensene "
                           "under håndheves av Vifte og kan ikke overstyres av Claude."))
         page.add(g)
-        enable = switch_row(_("Tillat styring fra Claude"), safety.get("mcp_enabled"), self.set_mcp_enabled,
+        rows = []
+        enable = switch_row(_("Tillat styring fra Claude"), safety.get("mcp_enabled"),
+                            lambda v: self.set_mcp_enabled(v, rows[0]),
                             _("Nødmodus og sikring ved sensortap er alltid på mens dette er slått på"))
+        rows.append(enable)
         g.add(enable)
         g.add(spin_row(_("Laveste viftehastighet (%)"), safety.get("floor", 25), 10, 60, 1,
                        lambda v: self.call("settings", mcp_floor=v),
@@ -1283,27 +1298,71 @@ class MainWindow(Adw.ApplicationWindow):
         row.add_suffix(btn)
         g.add(row)
 
-    def set_mcp_enabled(self, on):
+    def set_mcp_enabled(self, on, row=None):
+        if getattr(self, "_mcp_reverting", False):
+            return
+        if on:
+            self.confirm_mcp(row)   # spør først; tilgangen slås på først når brukeren bekrefter
+            return
+        self._apply_mcp(False)
+
+    def _apply_mcp(self, on):
         r = self.call("settings", mcp_enabled=on)
         if r is None:
-            return
+            return False
         if getattr(self, "_sync_safety", None):
             self._sync_safety(r.get("safety") or {})  # Sikkerhet-fanen i samme dialog
-        if not on:
-            self.toast(_("Claude-tilgang er slått av"))
-            return
-        # Ingen omstart trengs: tjenesten slipper Claude inn med en gang.
-        dlg = Adw.AlertDialog(
-            heading=_("Claude-tilgang er slått på"),
-            body=_("Claude kan nå lese sensorer og endre kurver og vifter innenfor sikkerhetsgrensene. "
-                   "Ingen omstart er nødvendig.\n\nEndringer tas i bruk med en gang, men lagres først når du "
-                   "ber om det. Du ser et varsel her for hver endring Claude gjør.\n\n"
-                   "Koble Vifte til Claude Code med:\nclaude mcp add --scope user vifte -- vifte mcp"))
-        dlg.add_response("ok", _("OK"))
-        if shutil.which("claude"):
-            dlg.add_response("add", _("Legg til i Claude Code"))
-            dlg.set_response_appearance("add", Adw.ResponseAppearance.SUGGESTED)
-        dlg.connect("response", lambda _d, r: r == "add" and self.register_claude_code())
+        # Ingen omstart trengs: tjenesten slipper Claude inn (eller ut) med en gang.
+        self.toast(_("Claude-tilgang er slått på. Endringer lagres først når du ber om det.") if on
+                   else _("Claude-tilgang er slått av"))
+        return True
+
+    def confirm_mcp(self, row):
+        """Advarsel før Claude får tilgang: KI kan ta feil, og pumper bør merkes først."""
+        pumps = (self.model.state.get("safety") or {}).get("pumps") or {}
+        names = [self.model.cfg.display_name(c.get("Identifier")) for c in self.model.cfg.controls
+                 if self.model.local_id(c.get("Identifier")) in pumps]
+        body = (_("Claude er en KI og kan ta feil. Følg med på temperaturer og viftehastigheter etter hver "
+                  "endring Claude gjør, og kontroller alltid resultatet selv.") + "\n\n" +
+                _("Vifte håndhever sikkerhetsgrensene uansett: styrte vifter går aldri under laveste hastighet, "
+                  "nødmodus og sikring ved sensortap er alltid på, og endringer lagres først når du ber om "
+                  "det.") + "\n\n")
+        if names:
+            body += _("Merket som pumpe: {}. Claude kan ikke endre den.").format(", ".join(names))
+        else:
+            body += _("Har du AIO eller annen vannkjøling, bør du merke pumpen før du slår på Claude: "
+                      "tannhjulet på pumpens kort → Type → Pumpe. Da kan verken Claude eller automatiske "
+                      "funksjoner endre den, og du unngår at pumpen settes for lavt.")
+        dlg = Adw.AlertDialog(heading=_("Slå på Claude-tilgang?"), body=body)
+        dlg.add_response("cancel", _("Avbryt"))
+        if not names:
+            dlg.add_response("pump", _("Merk pumpen først"))
+        dlg.add_response("enable", _("Slå på"))
+        dlg.set_response_appearance("enable", Adw.ResponseAppearance.SUGGESTED)
+        dlg.set_default_response("cancel")
+        dlg.set_close_response("cancel")
+
+        def revert():
+            if row is not None:
+                self._mcp_reverting = True
+                row.set_active(False)
+                self._mcp_reverting = False
+
+        def resp(_d, r):
+            if r == "enable":
+                if not self._apply_mcp(True):
+                    revert()
+                return
+            revert()
+            if r == "pump":
+                prefs = row.get_ancestor(Adw.PreferencesDialog) if row is not None else None
+                if prefs is not None:
+                    prefs.close()
+                self.stack.set_visible_child_name("controls")
+                if not self.model.show_hidden:
+                    self.activate_action("win.show-hidden", None)   # pumper er ofte skjult
+                self.toast(_("Trykk på tannhjulet på pumpens kort og velg Type → Pumpe"))
+        dlg.connect("response", resp)
         dlg.present(self)
 
     def register_claude_code(self):
