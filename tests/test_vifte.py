@@ -797,6 +797,21 @@ class MoveCardTests(unittest.TestCase):
         self.assertFalse(move_entry(lst, "d", "d"))
         self.assertFalse(move_entry(lst, "x", "a"))
 
+    def test_move_whole_group_keeps_order_inside_groups(self):
+        try:
+            from vifte.gui.common import move_group
+        except Exception as ex:
+            self.skipTest(f"GTK not available: {ex}")
+        lst = [{"Identifier": i, "g": g} for i, g in (("a1", "A"), ("b1", "B"), ("a2", "A"), ("c1", "C"), ("b2", "B"))]
+        key = lambda e: e["g"]   # noqa: E731
+        ids = lambda: [e["Identifier"] for e in lst]   # noqa: E731
+        self.assertTrue(move_group(lst, key, "C", "A"))         # bakover: C før A
+        self.assertEqual(ids(), ["c1", "a1", "a2", "b1", "b2"])
+        self.assertTrue(move_group(lst, key, "C", "B"))         # framover: C etter B
+        self.assertEqual(ids(), ["a1", "a2", "b1", "b2", "c1"])
+        self.assertFalse(move_group(lst, key, "A", "A"))
+        self.assertFalse(move_group(lst, key, "X", "A"))
+
 
 class TranslationTests(unittest.TestCase):
     def test_other_languages_are_complete_and_keep_placeholders(self):

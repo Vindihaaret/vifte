@@ -145,6 +145,24 @@ def move_entry(lst, src_id, dst_id):
     return True
 
 
+def move_group(lst, key, src, dst):
+    """Flytter alle oppføringer i gruppen src samlet til plassen til gruppen dst (framover: etter,
+    bakover: før). Rekkefølgen inne i hver gruppe beholdes. Returnerer True hvis noe ble flyttet."""
+    order, groups = [], {}
+    for e in lst:
+        k = key(e)
+        if k not in groups:
+            groups[k] = []
+            order.append(k)
+        groups[k].append(e)
+    if src not in groups or dst not in groups or src == dst:
+        return False
+    # index(dst) regnes ut før pop: framover havner gruppen etter dst, bakover før
+    order.insert(order.index(dst), order.pop(order.index(src)))
+    lst[:] = [e for k in order for e in groups[k]]
+    return True
+
+
 def combo_row(title, choices, selected_id, on_change, none_label=None, subtitle=None):
     """Adw.ComboRow over [(id, tekst)]. on_change(id) kalles ved endring."""
     ids = ([None] if none_label else []) + [c[0] for c in choices]

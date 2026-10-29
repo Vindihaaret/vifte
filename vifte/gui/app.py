@@ -16,7 +16,7 @@ from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # no
 from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .alerts import AlertMonitor  # noqa: E402
-from .common import Model, combo_row, move_entry, spin_row, switch_row  # noqa: E402
+from .common import Model, combo_row, move_entry, move_group, spin_row, switch_row  # noqa: E402
 from .dialogs import ControlDialog, CurveDialog, CustomSensorDialog, RemapDialog, RenameDialog  # noqa: E402
 from .graph import CurveGraph, Sparkline  # noqa: E402
 from .tray import Tray  # noqa: E402
@@ -120,16 +120,60 @@ class Section(Gtk.ScrolledWindow):
         clamp = Adw.Clamp(maximum_size=1400, child=self.box)
         self.set_child(clamp)
         self.flow = None
+        self.header = None
+        # Rull automatisk når et kort eller en gruppe dras nær toppen eller bunnen.
+        self._scroll_speed = 0.0
+        self._scroll_timer = None
+        self._dnd = Gtk.DropControllerMotion()
+        self._dnd.connect("motion", self._dnd_motion)
+        self._dnd.connect("leave", lambda *_a: self._set_scroll(0))
+        self.add_controller(self._dnd)
+
+    EDGE = 80     # px fra kanten der rullingen starter
+    MAX_STEP = 28  # px per tikk ved kanten
+
+    def _dnd_motion(self, _c, _x, y):
+        h = self.get_height()
+        if y < self.EDGE:
+            self._set_scroll(-self.MAX_STEP * (self.EDGE - y) / self.EDGE)
+        elif y > h - self.EDGE:
+            self._set_scroll(self.MAX_STEP * (y - (h - self.EDGE)) / self.EDGE)
+        else:
+            self._set_scroll(0)
+
+    def _set_scroll(self, speed):
+        self._scroll_speed = speed
+        if speed and self._scroll_timer is None:
+            self._scroll_timer = GLib.timeout_add(16, self._scroll_tick)
+
+    def _scroll_tick(self):
+        if not self._scroll_speed or self._dnd.get_drop() is None:
+            self._scroll_speed, self._scroll_timer = 0, None
+            return False
+        adj = self.get_vadjustment()
+        adj.set_value(max(adj.get_lower(), min(adj.get_upper() - adj.get_page_size(),
+                                               adj.get_value() + self._scroll_speed)))
+        return True
 
     def clear(self):
         while (c := self.box.get_first_child()):
             self.box.remove(c)
 
-    def new_flow(self, title=None):
+    def new_flow(self, title=None, movable=False):
+        self.header = None
         if title:
-            lab = Gtk.Label(label=title, xalign=0, margin_top=6)
+            lab = Gtk.Label(label=title, xalign=0)
             lab.add_css_class("title-4")
-            self.box.append(lab)
+            if movable:
+                head = Gtk.Box(spacing=6, margin_top=6, tooltip_text=_("Dra for å flytte gruppen"))
+                head.append(Gtk.Image(icon_name="list-drag-handle-symbolic", opacity=0.6))
+                head.append(lab)
+                head.set_cursor(Gdk.Cursor.new_from_name("grab"))
+            else:
+                lab.set_margin_top(6)
+                head = lab
+            self.header = head
+            self.box.append(head)
         self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                                 max_children_per_line=6, min_children_per_line=1,
                                 column_spacing=12, row_spacing=12)
@@ -600,11 +644,12 @@ class MainWindow(Adw.ApplicationWindow):
                 s = m.sensor(e.get("Identifier"))
                 groups.setdefault(s["hardware"] if s else _("Mangler på denne maskinen"), []).append(e)
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
-            flow = sec.new_flow(hwname)
+            flow = sec.new_flow(hwname, movable=True)
+            self.make_group_movable(sec.header, "speeds", hwname, cfg.fan_sensors)
             for e in items:
-                flow.append(self.value_card(e, "fan", cfg.fan_sensors, hwname))
+                flow.append(self.value_card(e, "fan", cfg.fan_sensors, hwname, "speeds"))
 
-    def value_card(self, e, kind, lst=None, group=None):
+    def value_card(self, e, kind, lst=None, group=None, page=None):
         m = self.model
         ident = e.get("Identifier")
         name = m.display_name(ident)
@@ -623,33 +668,59 @@ class MainWindow(Adw.ApplicationWindow):
         self.updaters.append(update)
         self.add_history(card, ident, kind)
         if lst is not None:
-            self.make_movable(card, ident, lst, group)
+            self.make_movable(card, ident, lst, group, page)
         return card
 
-    def make_movable(self, card, ident, lst, group):
+    def make_movable(self, card, ident, lst, group, page=None):
         """Kortet kan dras og slippes på et annet kort i samme gruppe. Rekkefølgen er rekkefølgen
-        i listen i konfigurasjonen (som i FanControl), så den følger med filen."""
+        i listen i konfigurasjonen (som i FanControl), så den følger med filen. En gruppe som dras
+        hit (fra overskriften), flyttes til denne gruppens plass."""
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
         src.connect("prepare", lambda _s, _x, _y: Gdk.ContentProvider.new_for_value(f"{group}\n{ident}"))
         src.connect("drag-begin", lambda s, _d: s.set_icon(Gtk.WidgetPaintable.new(card),
                                                            card.get_width() // 2, 20))
         card.add_controller(src)
-        dst = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        self._drop_target(card, lambda value: self._handle_drop(value, lst, page, group, ident))
 
-        def accepts(value):
-            g, _, other = (value or "").partition("\n")
-            return g == group and other != ident
-        dst.connect("enter", lambda *_a: (card.add_css_class("vifte-drop"), Gdk.DragAction.MOVE)[1])
-        dst.connect("leave", lambda *_a: card.remove_css_class("vifte-drop"))
+    def make_group_movable(self, header, page, group, lst):
+        """Hele gruppen dras i overskriften og slippes på en annen gruppe på samme side."""
+        src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+        src.connect("prepare", lambda _s, _x, _y: Gdk.ContentProvider.new_for_value(f"GROUP\n{page}\n{group}"))
+        src.connect("drag-begin", lambda s, _d: s.set_icon(Gtk.WidgetPaintable.new(header), 20, 10))
+        header.add_controller(src)
+        self._drop_target(header, lambda value: self._handle_drop(value, lst, page, group, None))
+
+    def _drop_target(self, widget, handler):
+        dst = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        dst.connect("enter", lambda *_a: (widget.add_css_class("vifte-drop"), Gdk.DragAction.MOVE)[1])
+        dst.connect("leave", lambda *_a: widget.remove_css_class("vifte-drop"))
 
         def drop(_t, value, _x, _y):
-            card.remove_css_class("vifte-drop")
-            if not accepts(value):
-                return False
-            GLib.idle_add(lambda: self.move_card(lst, value.partition("\n")[2], ident) and False)
-            return True
+            widget.remove_css_class("vifte-drop")
+            return handler(value or "")
         dst.connect("drop", drop)
-        card.add_controller(dst)
+        widget.add_controller(dst)
+
+    def _handle_drop(self, value, lst, page, group, ident):
+        if value.startswith("GROUP\n"):
+            _, src_page, src_group = value.split("\n", 2)
+            if page is None or src_page != page or src_group == group:
+                return False
+            GLib.idle_add(lambda: self.move_group(lst, src_group, group) and False)
+            return True
+        g, _, other = value.partition("\n")
+        if ident is None or g != group or other == ident:
+            return False
+        GLib.idle_add(lambda: self.move_card(lst, other, ident) and False)
+        return True
+
+    def group_of(self, entry):
+        s = self.model.sensor(entry.get("Identifier"))
+        return s["hardware"] if s else _("Mangler på denne maskinen")
+
+    def move_group(self, lst, src_group, dst_group):
+        if move_group(lst, self.group_of, src_group, dst_group):
+            self.config_changed(True)
 
     def move_card(self, lst, src_id, dst_id):
         if move_entry(lst, src_id, dst_id):
@@ -737,7 +808,7 @@ class MainWindow(Adw.ApplicationWindow):
                 card.append(big)
                 self.updaters.append(lambda b=big, i=ident: b.set_label(m.fmt_temp(m.temp_value(i))))
                 self.add_history(card, ident, "temperature")
-                self.make_movable(card, ident, cfg.custom_sensors, "custom")
+                self.make_movable(card, ident, cfg.custom_sensors, "custom", None)
                 flow.append(card)
         groups = {}
         for e in cfg.temp_sensors:
@@ -745,9 +816,10 @@ class MainWindow(Adw.ApplicationWindow):
                 s = m.sensor(e.get("Identifier"))
                 groups.setdefault(s["hardware"] if s else _("Mangler på denne maskinen"), []).append(e)
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
-            flow = sec.new_flow(hwname)
+            flow = sec.new_flow(hwname, movable=True)
+            self.make_group_movable(sec.header, "sensors", hwname, cfg.temp_sensors)
             for e in items:
-                flow.append(self.value_card(e, "temperature", cfg.temp_sensors, hwname))
+                flow.append(self.value_card(e, "temperature", cfg.temp_sensors, hwname, "sensors"))
 
     def add_sensor(self, kind):
         cfg = self.model.cfg

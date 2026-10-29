@@ -403,6 +403,7 @@ EN = {
         "Turn on",
     "Trykk på tannhjulet på pumpens kort og velg Type → Pumpe":
         "Click the gear on the pump's card and choose Type → Pump",
+    "Dra for å flytte gruppen": "Drag to move the group",
 }
 
 _lang = None

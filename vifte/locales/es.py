@@ -389,4 +389,5 @@ T = {
         "Activar",
     "Click the gear on the pump's card and choose Type → Pump":
         "Pulsa el engranaje de la tarjeta de la bomba y elige Tipo → Bomba",
+    "Drag to move the group": "Arrastra para mover el grupo",
 }

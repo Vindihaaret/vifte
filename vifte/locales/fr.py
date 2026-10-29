@@ -390,4 +390,5 @@ T = {
         "Activer",
     "Click the gear on the pump's card and choose Type → Pump":
         "Cliquez sur la roue dentée de la carte de la pompe et choisissez Type → Pompe",
+    "Drag to move the group": "Faites glisser pour déplacer le groupe",
 }

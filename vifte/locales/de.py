@@ -387,4 +387,5 @@ T = {
         "Einschalten",
     "Click the gear on the pump's card and choose Type → Pump":
         "Klicke auf das Zahnrad auf der Karte der Pumpe und wähle Typ → Pumpe",
+    "Drag to move the group": "Ziehen, um die Gruppe zu verschieben",
 }
