@@ -782,6 +782,22 @@ class PairedNameTests(unittest.TestCase):
         self.assertEqual(self.m.display_name("/lpc/nct6798d/fan/1"), "Fan #2")
 
 
+class MoveCardTests(unittest.TestCase):
+    def test_drag_forward_lands_after_and_backward_before(self):
+        try:
+            from vifte.gui.common import move_entry
+        except Exception as ex:
+            self.skipTest(f"GTK not available: {ex}")
+        lst = [{"Identifier": x} for x in "abcd"]
+        order = lambda: "".join(x["Identifier"] for x in lst)   # noqa: E731
+        self.assertTrue(move_entry(lst, "a", "c"))
+        self.assertEqual(order(), "bcad")
+        self.assertTrue(move_entry(lst, "d", "b"))
+        self.assertEqual(order(), "dbca")
+        self.assertFalse(move_entry(lst, "d", "d"))
+        self.assertFalse(move_entry(lst, "x", "a"))
+
+
 class TranslationTests(unittest.TestCase):
     def test_other_languages_are_complete_and_keep_placeholders(self):
         from vifte import i18n

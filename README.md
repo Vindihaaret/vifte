@@ -193,6 +193,10 @@ hysteresis at min/max, one-way hysteresis (older files), RPM mode (requires cali
 
 **Custom sensors:** Mix, time average, file (`.sensor`, first line = °C), offset.
 
+**Arrange cards:** drag a card on the **Sensors** or **Speeds** page and drop it on another card in the
+same group to move it. The order is stored in the configuration (the order of the sensor lists, as in
+FanControl) when you save.
+
 **Names:** a speed sensor you haven't named is shown with the name of the fan it is paired with (for
 example *AIO Pump* instead of *Fan #7*). This is display only – the configuration file keeps its own names,
 as on Windows – and can be turned off under **Settings → General → Speeds use the fan's name**.

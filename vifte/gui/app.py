@@ -8,7 +8,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from ..client import Client  # noqa: E402
 from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # noqa: E402
@@ -16,7 +16,7 @@ from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # no
 from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .alerts import AlertMonitor  # noqa: E402
-from .common import Model, combo_row, spin_row, switch_row  # noqa: E402
+from .common import Model, combo_row, move_entry, spin_row, switch_row  # noqa: E402
 from .dialogs import ControlDialog, CurveDialog, CustomSensorDialog, RemapDialog, RenameDialog  # noqa: E402
 from .graph import CurveGraph, Sparkline  # noqa: E402
 from .tray import Tray  # noqa: E402
@@ -33,6 +33,7 @@ CSS = """
 .vifte-sub { font-feature-settings: "tnum"; }
 .vifte-missing { color: @error_color; }
 .vifte-hidden { opacity: 0.5; }
+.vifte-drop { box-shadow: inset 0 0 0 2px @accent_color; }
 banner.error > revealer > widget { background-color: @error_bg_color; color: @error_fg_color; }
 """
 
@@ -601,9 +602,9 @@ class MainWindow(Adw.ApplicationWindow):
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
             flow = sec.new_flow(hwname)
             for e in items:
-                flow.append(self.value_card(e, "fan"))
+                flow.append(self.value_card(e, "fan", cfg.fan_sensors, hwname))
 
-    def value_card(self, e, kind):
+    def value_card(self, e, kind, lst=None, group=None):
         m = self.model
         ident = e.get("Identifier")
         name = m.display_name(ident)
@@ -621,7 +622,38 @@ class MainWindow(Adw.ApplicationWindow):
                 big.set_label(m.fmt_temp(v))
         self.updaters.append(update)
         self.add_history(card, ident, kind)
+        if lst is not None:
+            self.make_movable(card, ident, lst, group)
         return card
+
+    def make_movable(self, card, ident, lst, group):
+        """Kortet kan dras og slippes på et annet kort i samme gruppe. Rekkefølgen er rekkefølgen
+        i listen i konfigurasjonen (som i FanControl), så den følger med filen."""
+        src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+        src.connect("prepare", lambda _s, _x, _y: Gdk.ContentProvider.new_for_value(f"{group}\n{ident}"))
+        src.connect("drag-begin", lambda s, _d: s.set_icon(Gtk.WidgetPaintable.new(card),
+                                                           card.get_width() // 2, 20))
+        card.add_controller(src)
+        dst = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+
+        def accepts(value):
+            g, _, other = (value or "").partition("\n")
+            return g == group and other != ident
+        dst.connect("enter", lambda *_a: (card.add_css_class("vifte-drop"), Gdk.DragAction.MOVE)[1])
+        dst.connect("leave", lambda *_a: card.remove_css_class("vifte-drop"))
+
+        def drop(_t, value, _x, _y):
+            card.remove_css_class("vifte-drop")
+            if not accepts(value):
+                return False
+            GLib.idle_add(lambda: self.move_card(lst, value.partition("\n")[2], ident) and False)
+            return True
+        dst.connect("drop", drop)
+        card.add_controller(dst)
+
+    def move_card(self, lst, src_id, dst_id):
+        if move_entry(lst, src_id, dst_id):
+            self.config_changed(True)
 
     def add_history(self, card, ident, kind):
         """Graf over de siste 30 minuttene (fra tjenestens historikk) nederst på kortet."""
@@ -705,6 +737,7 @@ class MainWindow(Adw.ApplicationWindow):
                 card.append(big)
                 self.updaters.append(lambda b=big, i=ident: b.set_label(m.fmt_temp(m.temp_value(i))))
                 self.add_history(card, ident, "temperature")
+                self.make_movable(card, ident, cfg.custom_sensors, "custom")
                 flow.append(card)
         groups = {}
         for e in cfg.temp_sensors:
@@ -714,7 +747,7 @@ class MainWindow(Adw.ApplicationWindow):
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
             flow = sec.new_flow(hwname)
             for e in items:
-                flow.append(self.value_card(e, "temperature"))
+                flow.append(self.value_card(e, "temperature", cfg.temp_sensors, hwname))
 
     def add_sensor(self, kind):
         cfg = self.model.cfg

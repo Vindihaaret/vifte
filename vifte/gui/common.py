@@ -134,6 +134,17 @@ class Model:
         return out
 
 
+def move_entry(lst, src_id, dst_id):
+    """Flytter oppføringen src_id til plassen til dst_id. Dras den framover, havner den etter
+    målet; dras den bakover, før målet. Returnerer True hvis noe ble flyttet."""
+    ids = [x.get("Identifier") for x in lst]
+    if src_id not in ids or dst_id not in ids or src_id == dst_id:
+        return False
+    i, j = ids.index(src_id), ids.index(dst_id)
+    lst.insert(j, lst.pop(i))   # etter pop står målet på j-1 (framover) eller j (bakover)
+    return True
+
+
 def combo_row(title, choices, selected_id, on_change, none_label=None, subtitle=None):
     """Adw.ComboRow over [(id, tekst)]. on_change(id) kalles ved endring."""
     ids = ([None] if none_label else []) + [c[0] for c in choices]
