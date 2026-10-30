@@ -16,7 +16,7 @@ from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # no
 from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .alerts import AlertMonitor  # noqa: E402
-from .common import Model, combo_row, move_entry, move_group, spin_row, switch_row  # noqa: E402
+from .common import Model, combo_row, move_entry, move_group, spin_row, stress_path, switch_row  # noqa: E402
 from .dialogs import ControlDialog, CurveDialog, CustomSensorDialog, RemapDialog, RenameDialog  # noqa: E402
 from .graph import CurveGraph, Sparkline  # noqa: E402
 from .tray import Tray  # noqa: E402
@@ -26,6 +26,7 @@ APP_ID = "no.vifte.Vifte"
 UNINSTALLER = "/usr/local/bin/vifte-uninstall"
 ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icons")
 AUTOSTART_SYSTEM = "/etc/xdg/autostart/no.vifte.Vifte-tray.desktop"
+STRESS_URL = "https://github.com/Vindihaaret/stress"
 
 CSS = """
 .vifte-card { padding: 14px; min-width: 260px; }
@@ -222,6 +223,9 @@ class MainWindow(Adw.ApplicationWindow):
         sec.append(_("Koble manglende sensorer …"), "win.remap")
         sec.append(_("Søk etter maskinvare på nytt"), "win.rescan")
         menu.append_section(None, sec)
+        self.stress_menu = Gio.Menu()
+        self.refresh_stress_menu()
+        menu.append_section(None, self.stress_menu)
         sec = Gio.Menu()
         sec.append(_("Vis skjulte kort"), "win.show-hidden")
         sec.append(_("Pause styring (BIOS overtar)"), "win.pause")
@@ -233,6 +237,7 @@ class MainWindow(Adw.ApplicationWindow):
         sec.append(_("Avslutt"), "win.quit")
         menu.append_section(None, sec)
         mb = Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Meny"))
+        mb.connect("notify::active", lambda b, _p: b.get_active() and self.refresh_stress_menu())
         header.pack_end(mb)
         self.save_btn = Gtk.Button(label=_("Lagre"), tooltip_text=_("Lagre konfigurasjonen (Ctrl+S)"))
         self.save_btn.connect("clicked", lambda *_: self.save())
@@ -244,6 +249,7 @@ class MainWindow(Adw.ApplicationWindow):
                          ("remap", lambda: self.open_dialog(RemapDialog)), ("rescan", self.rescan),
                          ("settings", self.settings), ("about", self.about), ("uninstall", self.uninstall),
                          ("check-update", lambda: self.get_application().updates.check(manual=True)),
+                         ("stress", self.open_stress),
                          ("quit", self.request_quit)):
             a = Gio.SimpleAction.new(name, None)
             a.connect("activate", lambda _a, _p, cb=cb: cb())
@@ -1181,6 +1187,31 @@ class MainWindow(Adw.ApplicationWindow):
         v = not act.get_state().get_boolean()
         self.model.cfg.window["ShowHiddenCards"] = v
         self.config_changed(True)
+
+    def refresh_stress_menu(self):
+        """«Åpne Stress» hvis programmet er installert, ellers «Last ned Stress …»."""
+        self.stress_menu.remove_all()
+        self.stress_menu.append(_("Åpne Stress") if stress_path() else _("Last ned Stress …"), "win.stress")
+
+    def open_stress(self):
+        path = stress_path()
+        if path:
+            try:
+                Gio.Subprocess.new([path], Gio.SubprocessFlags.NONE)
+            except GLib.Error as ex:
+                self.toast(_("Kunne ikke starte Stress: {}").format(ex.message))
+            return
+        dlg = Adw.AlertDialog(
+            heading=_("Last ned Stress"),
+            body=_("Stress er et eget, frivillig program fra samme utvikler. Det setter prosessoren og "
+                   "skjermkortet under kontrollert last mens du følger temperaturene, som er nyttig når "
+                   "du justerer viftekurver. Vifte virker like godt uten.\n\nInstallasjonen er beskrevet "
+                   "på GitHub-siden."))
+        dlg.add_response("cancel", _("Avbryt"))
+        dlg.add_response("open", _("Åpne GitHub"))
+        dlg.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+        dlg.connect("response", lambda _d, r: r == "open" and Gtk.UriLauncher.new(STRESS_URL).launch(self, None, None))
+        dlg.present(self)
 
     def set_names_follow_pairing(self, on):
         from ..i18n import set_setting

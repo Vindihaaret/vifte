@@ -813,6 +813,24 @@ class MoveCardTests(unittest.TestCase):
         self.assertFalse(move_group(lst, key, "X", "A"))
 
 
+class StressLinkTests(unittest.TestCase):
+    def test_finds_stress_in_path_and_in_local_bin(self):
+        try:
+            from vifte.gui.common import stress_path
+        except Exception as ex:
+            self.skipTest(f"GTK not available: {ex}")
+        with tempfile.TemporaryDirectory() as home:
+            local = os.path.join(home, ".local", "bin")
+            os.makedirs(local)
+            with mock.patch.dict(os.environ, {"HOME": home, "PATH": os.path.join(home, "none")}):
+                self.assertIsNone(stress_path())
+                exe = os.path.join(local, "stresstest")
+                with open(exe, "w") as f:
+                    f.write("#!/bin/sh\n")
+                os.chmod(exe, 0o755)
+                self.assertEqual(stress_path(), exe, "found outside PATH")
+
+
 class TranslationTests(unittest.TestCase):
     def test_other_languages_are_complete_and_keep_placeholders(self):
         from vifte import i18n

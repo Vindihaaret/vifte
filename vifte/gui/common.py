@@ -1,5 +1,7 @@
 """Felles hjelpere for GUI-et: modellen (tjenestetilstand + konfigurasjon) og små widgets."""
+import os
 import re
+import shutil
 
 import gi
 
@@ -132,6 +134,13 @@ class Model:
             hwname = s["hardware"] if s else _("Mangler")
             out.append((ident, f"{hwname} / {self.display_name(ident)}"))
         return out
+
+
+def stress_path():
+    """Stress (eget, frivillig program), eller None. Det installeres i ~/.local/bin, som ikke
+    alltid er med i PATH når appen startes fra menyen."""
+    local = os.path.expanduser("~/.local/bin/stresstest")
+    return shutil.which("stresstest") or (local if os.access(local, os.X_OK) else None)
 
 
 def move_entry(lst, src_id, dst_id):

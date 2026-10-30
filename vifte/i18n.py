@@ -404,6 +404,16 @@ EN = {
     "Trykk på tannhjulet på pumpens kort og velg Type → Pumpe":
         "Click the gear on the pump's card and choose Type → Pump",
     "Dra for å flytte gruppen": "Drag to move the group",
+    "Åpne Stress":
+        "Open Stress",
+    "Last ned Stress …":
+        "Download Stress …",
+    "Last ned Stress":
+        "Download Stress",
+    "Kunne ikke starte Stress: {}":
+        "Could not start Stress: {}",
+    "Stress er et eget, frivillig program fra samme utvikler. Det setter prosessoren og skjermkortet under kontrollert last mens du følger temperaturene, som er nyttig når du justerer viftekurver. Vifte virker like godt uten.\n\nInstallasjonen er beskrevet på GitHub-siden.":
+        "Stress is a separate, optional program by the same developer. It puts the CPU and graphics card under controlled load while you watch the temperatures, which is useful when tuning fan curves. Vifte works just as well without it.\n\nInstallation is described on the GitHub page.",
 }
 
 _lang = None

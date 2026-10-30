@@ -29,7 +29,15 @@ at a fixed safe speed until it is back (see controls_with_lost_sensor in get_sta
 custom loop) and controls the user has locked have claude_can_change=false: you can read them, but you
 can't change, calibrate or pair them, or the curves and sensors they use. If a call is rejected, the error explains what to
 change. You cannot delete configurations, pause control or change the safety limits – the user does
-that in the app."""
+that in the app.
+
+Testing under load: Stress is a separate, optional program with its own MCP server ("stress"). If its tools
+are available, use them to test curves: run start_test on that server with a steady load, wait with its
+get_history until the temperatures have levelled off (usually several minutes), then compare with Vifte's
+get_history and fan speeds. Stop the test, adjust the curves here, and repeat the same load to compare.
+Stress stops by itself 5 °C below Vifte's emergency temperature. If its tools are not available, ask
+the user to run a load instead, or to install Stress (Vifte menu → Download Stress), and never assume
+it is installed."""
 
 
 class Server:

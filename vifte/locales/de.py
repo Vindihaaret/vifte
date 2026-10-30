@@ -388,4 +388,14 @@ T = {
     "Click the gear on the pump's card and choose Type → Pump":
         "Klicke auf das Zahnrad auf der Karte der Pumpe und wähle Typ → Pumpe",
     "Drag to move the group": "Ziehen, um die Gruppe zu verschieben",
+    "Open Stress":
+        "Stress öffnen",
+    "Download Stress …":
+        "Stress herunterladen …",
+    "Download Stress":
+        "Stress herunterladen",
+    "Could not start Stress: {}":
+        "Stress konnte nicht gestartet werden: {}",
+    "Stress is a separate, optional program by the same developer. It puts the CPU and graphics card under controlled load while you watch the temperatures, which is useful when tuning fan curves. Vifte works just as well without it.\n\nInstallation is described on the GitHub page.":
+        "Stress ist ein eigenständiges, optionales Programm desselben Entwicklers. Es setzt Prozessor und Grafikkarte unter kontrollierte Last, während du die Temperaturen beobachtest – nützlich beim Einstellen von Lüfterkurven. Vifte funktioniert auch ohne es genauso gut.\n\nDie Installation ist auf der GitHub-Seite beschrieben.",
 }

@@ -252,6 +252,12 @@ itself. Some hwmon drivers reset `pwm_enable` on resume, which silently hands th
 checks the mode before every write and sets manual mode again if it was lost, and `vifte-resume.service`
 also restarts the service after resume.
 
+**Load testing with Stress (optional):** [Stress](https://github.com/Vindihaaret/stress) is a separate,
+free program that puts the CPU and graphics card under controlled load while you watch the temperatures –
+useful when tuning fan curves. **Menu → Open Stress** starts it; if it isn't installed, the same entry says
+**Download Stress …** and links to it. Vifte works just as well without it. With both connected to Claude,
+Claude can run a steady load, adjust the curves in Vifte and run the same load again to compare.
+
 **Quit:** **Menu → Quit** (Ctrl+Q) closes the window and the tray icon. The service keeps controlling the
 fans. To hand the fans back to the BIOS, use **Menu → Pause control**.
 
