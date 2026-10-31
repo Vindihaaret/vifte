@@ -867,6 +867,18 @@ class StressLinkTests(unittest.TestCase):
                 self.assertEqual(stress_path(), exe, "found outside PATH")
 
 
+class PromptTests(unittest.TestCase):
+    def test_every_language_has_the_whole_setup_prompt(self):
+        import re
+        from vifte import i18n, prompts
+        self.assertEqual(set(prompts.SETUP), i18n.CODES)
+        for code, text in prompts.SETUP.items():
+            with self.subTest(lang=code):
+                self.assertEqual(re.findall(r"^(\d+)\.", text, re.M), [str(n) for n in range(1, 21)])
+                self.assertIn("Stress", text)
+                self.assertEqual(text.count("\n"), prompts.SETUP["nb"].count("\n"))
+
+
 class TranslationTests(unittest.TestCase):
     def test_other_languages_are_complete_and_keep_placeholders(self):
         from vifte import i18n

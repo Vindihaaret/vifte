@@ -8,6 +8,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from ..config import (CURVE_TITLES, MIX_FUNCTIONS, SENSOR_TYPES, calibration_points, curve_type,  # noqa: E402
                       custom_sensor_type, format_point, hysteresis, parse_point, set_hysteresis)
 from ..i18n import _  # noqa: E402
+from ..prompts import setup_prompt  # noqa: E402
 from .common import combo_row, entry_row, spin_row, switch_row  # noqa: E402
 from .graph import CurveGraph  # noqa: E402
 
@@ -647,6 +648,29 @@ class RemapDialog(Adw.PreferencesDialog):
             self.win.model.client.call("set_alias", config_id=config_id, local=local)
         except Exception as ex:
             self.win.toast(_(str(ex)))
+
+
+class PromptDialog(Adw.Dialog):
+    """Viser promptforslaget for Claude, med en knapp som kopierer hele teksten."""
+    def __init__(self):
+        super().__init__(title=_("Promptforslag"), content_width=680, content_height=640)
+        text = setup_prompt()
+        view = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR,
+                            left_margin=18, right_margin=18, top_margin=12, bottom_margin=12)
+        view.get_buffer().set_text(text)
+        copy = Gtk.Button(label=_("Kopier hele prompten"), halign=Gtk.Align.CENTER,
+                          margin_top=12, margin_bottom=12)
+        copy.add_css_class("suggested-action")
+        copy.add_css_class("pill")
+
+        def on_copy(_b):
+            copy.get_clipboard().set(text)
+            copy.set_label(_("Kopiert"))
+        copy.connect("clicked", on_copy)
+        box = Adw.ToolbarView(content=Gtk.ScrolledWindow(child=view, vexpand=True))
+        box.add_top_bar(Adw.HeaderBar())
+        box.add_bottom_bar(copy)
+        self.set_child(box)
 
 
 class RenameDialog:

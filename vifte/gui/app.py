@@ -17,7 +17,8 @@ from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .alerts import AlertMonitor  # noqa: E402
 from .common import Model, combo_row, move_entry, move_group, spin_row, stress_path, switch_row  # noqa: E402
-from .dialogs import ControlDialog, CurveDialog, CustomSensorDialog, RemapDialog, RenameDialog  # noqa: E402
+from .dialogs import (ControlDialog, CurveDialog, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
+                      RenameDialog)
 from .graph import CurveGraph, Sparkline  # noqa: E402
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
@@ -1318,6 +1319,13 @@ class MainWindow(Adw.ApplicationWindow):
             btn = Gtk.Button(label=_("Legg til"), valign=Gtk.Align.CENTER)
             btn.connect("clicked", lambda *_a: self.register_claude_code())
             row.add_suffix(btn)
+        g.add(row)
+        row = Adw.ActionRow(title=_("Promptforslag"),
+                            subtitle=_("Ferdig tekst du kan lime inn i Claude for å sette opp og teste viftene"))
+        btn = Gtk.Button(label=_("Vis"), valign=Gtk.Align.CENTER)
+        btn.connect("clicked", lambda *_a: PromptDialog().present(self))
+        row.add_suffix(btn)
+        row.set_activatable_widget(btn)
         g.add(row)
 
     def build_safety_settings(self, page):

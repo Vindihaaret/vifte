@@ -118,6 +118,10 @@ T = {
         "Claude ne peut jamais régler un ventilateur plus bas, ni l'arrêter",
     "Emergency temperature (°C)": "Température d'urgence (°C)",
     "Connect to Claude Code": "Connecter à Claude Code",
+    "Prompt suggestion": "Suggestion de prompt",
+    "Ready-made text to paste into Claude to set up and test your fans": "Texte prêt à coller dans Claude pour configurer et tester vos ventilateurs",
+    "Copy the whole prompt": "Copier tout le prompt",
+    "Copied": "Copié",
     "Add": "Ajouter",
     "Claude access is turned off": "L'accès de Claude est désactivé",
     "Vifte was added to Claude Code. Start a new Claude Code session to use it.":

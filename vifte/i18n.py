@@ -135,6 +135,11 @@ EN = {
         "Claude can never set a fan lower than this, and never stop it",
     "Nødtemperatur (°C)": "Emergency temperature (°C)",
     "Koble til Claude Code": "Connect to Claude Code",
+    "Promptforslag": "Prompt suggestion",
+    "Ferdig tekst du kan lime inn i Claude for å sette opp og teste viftene":
+        "Ready-made text to paste into Claude to set up and test your fans",
+    "Kopier hele prompten": "Copy the whole prompt",
+    "Kopiert": "Copied",
     "Legg til": "Add",
     "Claude-tilgang er slått av": "Claude access is turned off",
     "Vifte er lagt til i Claude Code. Start en ny Claude Code-økt for å bruke den.":

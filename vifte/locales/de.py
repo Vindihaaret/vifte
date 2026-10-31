@@ -116,6 +116,10 @@ T = {
         "Claude kann einen Lüfter nie niedriger einstellen und ihn nie anhalten",
     "Emergency temperature (°C)": "Notfalltemperatur (°C)",
     "Connect to Claude Code": "Mit Claude Code verbinden",
+    "Prompt suggestion": "Prompt-Vorschlag",
+    "Ready-made text to paste into Claude to set up and test your fans": "Fertiger Text zum Einfügen in Claude, um die Lüfter einzurichten und zu testen",
+    "Copy the whole prompt": "Ganzen Prompt kopieren",
+    "Copied": "Kopiert",
     "Add": "Hinzufügen",
     "Claude access is turned off": "Claude-Zugriff ist ausgeschaltet",
     "Vifte was added to Claude Code. Start a new Claude Code session to use it.":
