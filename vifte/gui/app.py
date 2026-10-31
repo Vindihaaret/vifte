@@ -522,7 +522,10 @@ class MainWindow(Adw.ApplicationWindow):
             ent = cfg.control(ident) or {}
             out = st.get("out")
             read = st.get("read")
-            if out is not None:
+            if st.get("no_fan"):
+                big.set_label("–")
+                level.set_value(0)
+            elif out is not None:
                 big.set_label(f"{out:.0f} %")
                 level.set_value(out)
             elif read is not None:
@@ -533,7 +536,10 @@ class MainWindow(Adw.ApplicationWindow):
                 level.set_value(0)
             r = st.get("rpm")
             pump = st.get("pump")
-            rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None and local else ""))
+            if st.get("no_fan"):
+                rpm.set_label(_("Ingen vifte (0 RPM)"))
+            else:
+                rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None and local else ""))
             if pump:
                 manual.set_label(_("PUMPE"))
             else:

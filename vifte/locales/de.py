@@ -36,6 +36,7 @@ T = {
     "Enable control": "Steuerung aktivieren",
     "(no curve)": "(keine Kurve)",
     "BIOS controls": "BIOS steuert",
+    "No fan (0 RPM)": "Keine Lüfter (0 RPM)",
     "MANUAL": "MANUELL",
     "New curve": "Neue Kurve",
     "No curves yet": "Noch keine Kurven",

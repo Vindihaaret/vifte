@@ -36,6 +36,7 @@ T = {
     "Enable control": "Activer le contrôle",
     "(no curve)": "(aucune courbe)",
     "BIOS controls": "Contrôlé par le BIOS",
+    "No fan (0 RPM)": "Aucun ventilateur (0 RPM)",
     "MANUAL": "MANUEL",
     "New curve": "Nouvelle courbe",
     "No curves yet": "Aucune courbe pour l'instant",

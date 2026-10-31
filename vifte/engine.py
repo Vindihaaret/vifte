@@ -116,6 +116,7 @@ class Engine:
         # Pumper (lokal kontroll-id -> {"mode": "bios"|"fixed", "speed": %}). Lagres på maskinen,
         # ikke i konfigurasjonen, og går foran alt konfigurasjonen sier om utgangen.
         self.pumps = {}
+        self._zero_since = {}          # kontroll-id -> siden når utgangen har målt 0 RPM
 
     def _index(self):
         self.by_id = {}
@@ -399,6 +400,18 @@ class Engine:
         return st.auto_value
 
     # ------------------------------------------------------------ kontroller
+    def no_fan(self, ctl, state, sensor, now):
+        """Får en hovedkortutgang vi ikke styrer signal, men har ikke målt turtall på en stund?
+
+        Lavt signal teller ikke: da kan en tilkoblet vifte stå stille med vilje. Skjermkort er
+        utelatt fordi de melder prosent selv når viftene står i nullturtallsmodus.
+        """
+        idle = ctl.id.startswith("/lpc/") and state["out"] is None and not state["pump"]
+        if not (idle and sensor and sensor.value == 0 and (ctl.value or 0) >= self.NO_FAN_MIN):
+            self._zero_since.pop(ctl.id, None)
+            return False
+        return now - self._zero_since.setdefault(ctl.id, now) >= self.NO_FAN_AFTER
+
     @staticmethod
     def rpm_to_percent(calibration, rpm):
         pts = sorted((r, p) for p, r in calibration_points(calibration))
@@ -434,6 +447,7 @@ class Engine:
             state["read"] = ctl.value
             pump = self.pumps.get(ctl.id)
             state["pump"] = pump["mode"] if pump else None
+            state["no_fan"] = self.no_fan(ctl, state, ps or self.by_id.get(ctl.id.replace("/control/", "/fan/")), now)
             if pump:
                 # Ingen kurver, kalibrering eller paring på en pumpe – bare BIOS eller fast hastighet.
                 state["lost"] = None
@@ -508,6 +522,8 @@ class Engine:
     FAILSAFE_HYSTERESIS = 7.0
     SENSOR_LOST_AFTER = 5.0   # sekunder uten verdi før sensoren regnes som borte
     PUMP_MIN = 70.0           # laveste faste hastighet for en pumpe
+    NO_FAN_MIN = 20.0         # laveste signal (%) der 0 RPM betyr at ingen vifte er tilkoblet
+    NO_FAN_AFTER = 30.0       # så lenge (sekunder) må utgangen ha målt 0 RPM
 
     def failsafe_sensors(self):
         """Kjernetemperaturer for CPU og GPU. NVMe, RAM o.l. er med vilje utelatt, og for

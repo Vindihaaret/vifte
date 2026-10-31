@@ -49,6 +49,7 @@ EN = {
     "Aktiver styring": "Enable control",
     "(ingen kurve)": "(no curve)",
     "BIOS styrer": "BIOS controls",
+    "Ingen vifte (0 RPM)": "No fan (0 RPM)",
     "MANUELL": "MANUAL",
     "Ny kurve": "New curve",
     "Ingen kurver ennå": "No curves yet",

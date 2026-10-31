@@ -318,6 +318,42 @@ class PumpEngineTests(unittest.TestCase):
         self.assertEqual(self.fake.backends[FAN0].value, 100)
 
 
+class NoFanTests(unittest.TestCase):
+    def setUp(self):
+        EngineTests.setUp(self)
+        self.fake.rpm["/lpc/nct6798d/fan/1"] = 0.0
+        self.fake.backends[FAN1].value = 64.0
+
+    def wait(self, seconds=31):
+        with mock.patch("vifte.engine.time.monotonic", return_value=1000.0):
+            self.e.tick()
+        with mock.patch("vifte.engine.time.monotonic", return_value=1000.0 + seconds):
+            self.e.tick()
+        return self.e.control_state[FAN1]["no_fan"]
+
+    def test_signal_without_rpm_on_an_unused_output_is_no_fan(self):
+        self.assertTrue(self.wait())
+
+    def test_needs_to_last(self):
+        self.assertFalse(self.wait(5))
+
+    def test_rpm_or_low_signal_is_not_no_fan(self):
+        self.fake.backends[FAN1].value = 10.0
+        self.assertFalse(self.wait())
+        self.fake.backends[FAN1].value = 64.0
+        self.fake.rpm["/lpc/nct6798d/fan/1"] = 500.0
+        self.assertFalse(self.wait())
+
+    def test_pump_and_controlled_fan_are_not_no_fan(self):
+        self.e.pumps = {FAN1: {"mode": "bios"}}
+        self.assertFalse(self.wait())
+        self.e.pumps = {}
+        self.fake.rpm["/lpc/nct6798d/fan/0"] = 0.0
+        self.fake.backends[FAN0].value = 64.0
+        self.wait()
+        self.assertFalse(self.e.control_state[FAN0]["no_fan"])
+
+
 # ====================================================================== MCP / sikkerhet
 
 class McpTests(unittest.TestCase):
