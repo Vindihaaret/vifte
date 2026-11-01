@@ -200,6 +200,11 @@ group you drop on, dragging up places it before. Cards never move between groups
 itself when you drag near the top or bottom. The order is stored in the configuration (the order of the
 sensor lists, as in FanControl) when you save.
 
+**Overview and colour:** an overview at the top of the window shows the CPU, GPU, fans and safety at a
+glance, and a soft window tint follows the hotter of the CPU and GPU: cool when idle, warm under load, red
+in emergency mode. Both can be turned off under **Settings → General**. Motherboard outputs with no fan
+are shown as small labels instead of full cards.
+
 **Names:** a speed sensor you haven't named is shown with the name of the fan it is paired with (for
 example *AIO Pump* instead of *Fan #7*). This is display only – the configuration file keeps its own names,
 as on Windows – and can be turned off under **Settings → General → Speeds use the fan's name**.

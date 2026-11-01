@@ -13,6 +13,29 @@ from ..config import FanControlConfig  # noqa: E402
 from ..i18n import _, get_setting  # noqa: E402
 
 
+class StatusHero(Gtk.Box):
+    """Statuskort øverst i innstillinger og dialoger: prikk, hovedtekst og en linje under."""
+    def __init__(self):
+        super().__init__(spacing=14)
+        self.dot = Gtk.Box(valign=Gtk.Align.CENTER)
+        self.title = Gtk.Label(xalign=0, wrap=True)
+        self.title.add_css_class("heading")
+        self.text = Gtk.Label(xalign=0, wrap=True)
+        self.text.add_css_class("dim-label")
+        self.text.add_css_class("caption")
+        lines = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        lines.append(self.title)
+        lines.append(self.text)
+        self.append(self.dot)
+        self.append(lines)
+
+    def set_status(self, title, text, level=None):
+        self.title.set_label(title)
+        self.text.set_label(text)
+        self.set_css_classes(["vifte-hero"] + ([level] if level else []))
+        self.dot.set_css_classes(["vifte-dot"] + ([level] if level else []))
+
+
 class Model:
     """Holder siste tilstand fra tjenesten og en lokal kopi av konfigurasjonen.
     Alle endringer gjøres i self.cfg og sendes straks til tjenesten (push)."""

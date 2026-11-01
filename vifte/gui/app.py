@@ -16,10 +16,12 @@ from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # no
 from .. import __version__, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .alerts import AlertMonitor  # noqa: E402
-from .common import Model, combo_row, move_entry, move_group, spin_row, stress_path, switch_row  # noqa: E402
+from .common import (Model, StatusHero, combo_row, move_entry, move_group, spin_row, stress_path,  # noqa: E402
+                     switch_row)
 from .dialogs import (ControlDialog, CurveDialog, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
                       RenameDialog)
 from .graph import CurveGraph, Sparkline  # noqa: E402
+from .look import fan_summary, heat_step, safety_state, temp_status  # noqa: E402
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -30,9 +32,45 @@ AUTOSTART_SYSTEM = "/etc/xdg/autostart/no.vifte.Vifte-tray.desktop"
 STRESS_URL = "https://github.com/Vindihaaret/stress"
 
 CSS = """
-.vifte-card { padding: 14px; min-width: 260px; }
-.vifte-big { font-size: 26px; font-weight: 700; font-feature-settings: "tnum"; }
+.vifte-card { padding: 14px 16px; min-width: 260px; }
+.vifte-big { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; font-feature-settings: "tnum"; }
 .vifte-sub { font-feature-settings: "tnum"; }
+
+/* Hovedvinduet: kort i lag oppå en svak fargetone. Dialogene ligger utenfor og forblir rolige. */
+.vifte-main { transition: background-image 1200ms ease; }
+.vifte-main headerbar { background: none; box-shadow: none; }
+.vifte-main .vifte-card, .vifte-tile {
+  background-color: alpha(white, 0.065); border-radius: 16px;
+  box-shadow: inset 0 1px alpha(white, 0.09), inset 0 0 0 1px alpha(white, 0.07), 0 6px 20px alpha(black, 0.16);
+}
+.vifte-light .vifte-card, .vifte-light .vifte-tile {
+  background-color: alpha(white, 0.74);
+  box-shadow: inset 0 0 0 1px alpha(black, 0.06), 0 6px 18px alpha(black, 0.07);
+}
+.vifte-tint-cool { background-image: radial-gradient(farthest-side at 10% 0, alpha(#4a8fd0, 0.30), transparent); }
+.vifte-tint-mild { background-image: radial-gradient(farthest-side at 10% 0, alpha(#48a89a, 0.28), transparent); }
+.vifte-tint-warm { background-image: radial-gradient(farthest-side at 10% 0, alpha(#d9a03a, 0.30), transparent); }
+.vifte-tint-hot { background-image: radial-gradient(farthest-side at 10% 0, alpha(#de6a3a, 0.34), transparent); }
+.vifte-tint-emergency { background-image: radial-gradient(farthest-side at 10% 0, alpha(#e03c3c, 0.42), transparent); }
+
+.vifte-tile { padding: 12px 16px; }
+.vifte-tile-value { font-size: 30px; font-weight: 700; letter-spacing: -0.5px; font-feature-settings: "tnum"; }
+.vifte-tile-text { font-size: 18px; font-weight: 700; margin-top: 6px; }
+.vifte-chip { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px;
+  background-color: alpha(@window_fg_color, 0.1); }
+.vifte-dot { min-width: 7px; min-height: 7px; border-radius: 99px; background-color: @success_color; }
+.vifte-dot.warm { background-color: @warning_color; }
+.vifte-dot.hot, .vifte-dot.emergency { background-color: @error_color; }
+.vifte-dot.live { background-color: @accent_color; }
+.vifte-slim { padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 400;
+  box-shadow: inset 0 0 0 1px alpha(@window_fg_color, 0.1); }
+.vifte-card levelbar trough, .vifte-card levelbar block { min-height: 6px; border-radius: 99px; }
+
+.vifte-hero { padding: 13px 16px; border-radius: 14px;
+  background-image: linear-gradient(110deg, alpha(@success_color, 0.17), alpha(@window_fg_color, 0.04));
+  box-shadow: inset 0 0 0 1px alpha(@window_fg_color, 0.07); }
+.vifte-hero.warm { background-image: linear-gradient(110deg, alpha(@warning_color, 0.17), alpha(@window_fg_color, 0.04)); }
+.vifte-hero.live { background-image: linear-gradient(110deg, alpha(@accent_color, 0.17), alpha(@window_fg_color, 0.04)); }
 .vifte-missing { color: @error_color; }
 .vifte-hidden { opacity: 0.5; }
 .vifte-drop { box-shadow: inset 0 0 0 2px @accent_color; }
@@ -112,6 +150,35 @@ class Card(Gtk.Box):
             b.connect("clicked", lambda *_: on_settings())
             head.append(b)
         self.append(head)
+
+
+class Tile(Gtk.Grid):
+    """Felt i oversikten: ledetekst, status, stor verdi og en linje eller graf nederst."""
+    def __init__(self, label, text=False):
+        super().__init__(column_spacing=8, hexpand=True)
+        self.add_css_class("vifte-tile")
+        lab = Gtk.Label(label=label, xalign=0, hexpand=True)
+        lab.add_css_class("dim-label")
+        lab.add_css_class("caption-heading")
+        self.attach(lab, 0, 0, 1, 1)
+        self.chip = Gtk.Box(spacing=5, visible=False, valign=Gtk.Align.CENTER)
+        self.chip.add_css_class("vifte-chip")
+        self.dot = Gtk.Box(valign=Gtk.Align.CENTER)
+        self.chip_label = Gtk.Label()
+        self.chip.append(self.dot)
+        self.chip.append(self.chip_label)
+        self.attach(self.chip, 1, 0, 1, 1)
+        self.value = Gtk.Label(label="–", xalign=0, ellipsize=3)
+        self.value.add_css_class("vifte-tile-text" if text else "vifte-tile-value")
+        self.attach(self.value, 0, 1, 2, 1)
+
+    def set_status(self, name, label):
+        self.chip.set_visible(bool(name))
+        self.dot.set_css_classes(["vifte-dot"] + ([name] if name else []))
+        self.chip_label.set_label(label)
+
+    def add_bottom(self, widget):
+        self.attach(widget, 0, 2, 2, 1)
 
 
 class Section(Gtk.ScrolledWindow):
@@ -196,6 +263,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.toasts = Adw.ToastOverlay()
         tv = Adw.ToolbarView()
+        tv.add_css_class("vifte-main")
+        self.main_view = tv
+        self._tint = None
         self.toasts.set_child(tv)
         self.set_content(self.toasts)
 
@@ -283,18 +353,107 @@ class MainWindow(Adw.ApplicationWindow):
             sec = Section()
             self.pages[key] = sec
             self.stack.add_titled_with_icon(sec, key, title, icon)
-        tv.set_content(self.stack)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content.append(self.build_overview())
+        self.stack.set_vexpand(True)
+        content.append(self.stack)
+        tv.set_content(content)
+
+        style = Adw.StyleManager.get_default()
+        style.connect("notify::dark", lambda *_a: self.apply_style_mode())
+        self.apply_style_mode()
 
         bar = Adw.ViewSwitcherBar(stack=self.stack)
         tv.add_bottom_bar(bar)
         bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 700sp"))
         bp.add_setter(bar, "reveal", True)
         bp.add_setter(switcher, "visible", False)
+        bp.add_setter(self.overview, "visible", False)
         self.add_breakpoint(bp)
 
         self.connect("close-request", self.on_close)
         self.poll()
         self._timer = GLib.timeout_add(1000, self.poll)
+
+    def apply_style_mode(self):
+        if Adw.StyleManager.get_default().get_dark():
+            self.main_view.remove_css_class("vifte-light")
+        else:
+            self.main_view.add_css_class("vifte-light")
+
+    # ================================================================ oversikt og fargetone
+    def build_overview(self):
+        from ..i18n import get_setting
+        self.tile_cpu, self.tile_gpu = Tile("CPU"), Tile("GPU")
+        self.tile_fans, self.tile_safety = Tile(_("Vifter")), Tile(_("Sikkerhet"), text=True)
+        self.spark_cpu, self.spark_gpu = Sparkline(), Sparkline()
+        self.tile_cpu.add_bottom(self.spark_cpu)
+        self.tile_gpu.add_bottom(self.spark_gpu)
+        self.fans_sub = Gtk.Label(xalign=0, ellipsize=3, margin_top=8)
+        self.safety_sub = Gtk.Label(xalign=0, ellipsize=3, margin_top=8)
+        for lab, tile in ((self.fans_sub, self.tile_fans), (self.safety_sub, self.tile_safety)):
+            lab.add_css_class("dim-label")
+            lab.add_css_class("caption")
+            tile.add_bottom(lab)
+        grid = Gtk.Grid(column_homogeneous=True, column_spacing=12, margin_top=6, margin_bottom=2,
+                        margin_start=24, margin_end=24)
+        grid.attach(self.tile_cpu, 0, 0, 3, 1)
+        grid.attach(self.tile_gpu, 3, 0, 3, 1)
+        grid.attach(self.tile_fans, 6, 0, 2, 1)
+        grid.attach(self.tile_safety, 8, 0, 3, 1)
+        self.overview = Adw.Clamp(maximum_size=1400, child=grid, visible=bool(get_setting("overview_enabled", True)))
+        return self.overview
+
+    def set_overview(self, on):
+        from ..i18n import set_setting
+        set_setting("overview_enabled", on)
+        self.overview.set_visible(on)
+
+    def set_tint(self, on):
+        from ..i18n import set_setting
+        set_setting("tint_enabled", on)
+        self.update_tint()
+
+    def update_tint(self):
+        """Svak fargetone etter den varmeste av CPU og GPU; rød i nødmodus."""
+        from ..i18n import get_setting
+        m = self.model
+        temps = [v for v in (m.temp_value(self.auto_tray_sensor(k)) for k in ("cpu", "gpu")) if v is not None]
+        emergency = bool((m.state.get("failsafe") or {}).get("active"))
+        step = heat_step(max(temps) if temps else None, self._tint, emergency) \
+            if get_setting("tint_enabled", True) else None
+        if step != self._tint:
+            if self._tint:
+                self.main_view.remove_css_class(f"vifte-tint-{self._tint}")
+            if step:
+                self.main_view.add_css_class(f"vifte-tint-{step}")
+            self._tint = step
+
+    def update_overview(self):
+        m, st = self.model, self.model.state
+        emergency = bool((st.get("failsafe") or {}).get("active"))
+        limit = (st.get("failsafe") or {}).get("temp") or 95
+        names = {"calm": _("Rolig"), "warm": _("Varm"), "hot": _("Het"), "emergency": _("Nødmodus")}
+        for kind, tile, spark in (("cpu", self.tile_cpu, self.spark_cpu), ("gpu", self.tile_gpu, self.spark_gpu)):
+            ident = self.auto_tray_sensor(kind)
+            v = m.temp_value(ident) if ident else None
+            tile.value.set_label(m.fmt_temp(v) if v is not None else "–")
+            status = temp_status(v, emergency and v is not None and v >= limit)
+            tile.set_status(status, names.get(status, ""))
+            spark.set_values(m.history_values(ident)[1] if ident else [])
+        avg, fans, pumps = fan_summary(st.get("control_state") or {})
+        self.tile_fans.value.set_label(f"{avg:.0f} %" if avg is not None else "–")
+        text = _("{} styrt").format(fans)
+        self.fans_sub.set_label(text + (" · " + _("Pumper: {}").format(pumps) if pumps else ""))
+        state = safety_state(st)
+        self.tile_safety.value.set_label({"emergency": _("Nødmodus"), "sensor_lost": _("Sensor borte"),
+                                          "paused": _("Styring på pause"), "ok": _("Alt i orden"),
+                                          "no_emergency": _("Nødmodus av")}[state])
+        self.safety_sub.set_label({"emergency": _("Alle styrte vifter går på 100 %"),
+                                   "sensor_lost": _("Viftene går på sikker hastighet"),
+                                   "paused": _("BIOS styrer viftene"),
+                                   "no_emergency": _("Kan slås på i innstillingene")}.get(
+            state, _("Nødmodus ved {}").format(m.fmt_temp(limit))))
 
     def on_close(self, *_a):
         app = self.get_application()
@@ -469,14 +628,25 @@ class MainWindow(Adw.ApplicationWindow):
                                                       "(f.eks. «sudo modprobe nct6775») og søk på nytt.")))
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
             flow = sec.new_flow(hwname)
+            slim = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=12,
+                               column_spacing=8, row_spacing=8, visible=False)
             for e, local in items:
-                flow.append(self.control_card(e, local))
+                flow.append(self.control_card(e, local, slim))
+            sec.box.append(slim)
 
-    def control_card(self, e, local):
+    def control_card(self, e, local, slim):
         m, cfg = self.model, self.model.cfg
         ident = e.get("Identifier")
         card = Card(e.get("NickName") or e.get("Name") or ident, None if local else ident,
                     lambda: self.open_dialog(ControlDialog, ident), e.get("IsHidden"))
+        # En utgang uten vifte vises som en liten merkelapp i stedet for et helt kort.
+        chip = Gtk.Button(label=f"{card.title.get_label()} · {_('Ingen vifte (0 RPM)')}",
+                          tooltip_text=_("Innstillinger"))
+        chip.add_css_class("flat")
+        chip.add_css_class("vifte-slim")
+        chip.connect("clicked", lambda *_a: self.open_dialog(ControlDialog, ident))
+        slim.append(chip)
+        chip.get_parent().set_visible(False)
         row = Gtk.Box(spacing=8)
         sw = Gtk.Switch(active=bool(e.get("Enable")), valign=Gtk.Align.CENTER,
                         tooltip_text=_("Aktiver styring"))
@@ -523,10 +693,11 @@ class MainWindow(Adw.ApplicationWindow):
             ent = cfg.control(ident) or {}
             out = st.get("out")
             read = st.get("read")
-            if st.get("no_fan"):
-                big.set_label("–")
-                level.set_value(0)
-            elif out is not None:
+            no_fan = bool(st.get("no_fan"))
+            card.get_parent().set_visible(not no_fan)
+            chip.get_parent().set_visible(no_fan)
+            slim.set_visible(any(c.get_visible() for c in slim))
+            if out is not None:
                 big.set_label(f"{out:.0f} %")
                 level.set_value(out)
             elif read is not None:
@@ -537,10 +708,7 @@ class MainWindow(Adw.ApplicationWindow):
                 level.set_value(0)
             r = st.get("rpm")
             pump = st.get("pump")
-            if st.get("no_fan"):
-                rpm.set_label(_("Ingen vifte (0 RPM)"))
-            else:
-                rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None and local else ""))
+            rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None and local else ""))
             if pump:
                 manual.set_label(_("PUMPE"))
             else:
@@ -849,6 +1017,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ================================================================ løpende oppdatering
     def update_values(self):
         st = self.model.state
+        self.update_tint()
+        self.update_overview()
         for u in self.updaters:
             try:
                 u()
@@ -1268,6 +1438,11 @@ class MainWindow(Adw.ApplicationWindow):
         w = self.model.cfg.window
         g.add(combo_row(_("Tema"), [("system", _("Følg systemet")), ("light", _("Lyst")), ("dark", _("Mørkt"))],
                         self.theme_choice(), self.set_theme))
+        from ..i18n import get_setting as setting
+        g.add(switch_row(_("Farge følger temperaturen"), setting("tint_enabled", True), self.set_tint,
+                         _("Svak fargetone i vinduet: kjølig ved tomgang, varm under last, rød i nødmodus")))
+        g.add(switch_row(_("Vis oversikt"), setting("overview_enabled", True), self.set_overview,
+                         _("CPU, GPU, vifter og sikkerhet øverst i vinduet")))
         g.add(switch_row(_("Fahrenheit"), self.model.fahrenheit, self.set_fahrenheit,
                          _("Vis temperaturer i °F i stedet for °C")))
         g.add(switch_row(_("Hastigheter bruker viftenavnet"), self.model.names_follow_pairing,
@@ -1299,6 +1474,10 @@ class MainWindow(Adw.ApplicationWindow):
 
     def build_mcp_settings(self, page):
         safety = self.model.state.get("safety") or {}
+        top = Adw.PreferencesGroup()
+        page.add(top)
+        self.claude_hero = StatusHero()
+        top.add(self.claude_hero)
         g = Adw.PreferencesGroup(
             title=_("Claude (MCP)"),
             description=_("La Claude lese sensorer og justere kurver og vifter for deg. Sikkerhetsgrensene "
@@ -1327,9 +1506,26 @@ class MainWindow(Adw.ApplicationWindow):
         row.add_suffix(btn)
         row.set_activatable_widget(btn)
         g.add(row)
+        self.sync_claude_hero(safety)
+
+    def sync_claude_hero(self, safety):
+        if not safety.get("mcp_enabled"):
+            self.claude_hero.set_status(_("Claude har ikke tilgang"), _("Slå på bryteren under for å gi tilgang"), "warm")
+            return
+        pumps = safety.get("pumps") or {}
+        names = [c.get("NickName") or c.get("Name") for c in self.model.cfg.controls
+                 if self.model.local_id(c.get("Identifier")) in pumps]
+        text = _("Laveste hastighet {} %").format(safety.get("floor", 25))
+        if names:
+            text += " · " + _("{} er beskyttet").format(", ".join(names))
+        self.claude_hero.set_status(_("Claude har tilgang"), text)
 
     def build_safety_settings(self, page):
         safety = self.model.state.get("safety") or {}
+        top = Adw.PreferencesGroup()
+        page.add(top)
+        hero = StatusHero()
+        top.add(hero)
         g = Adw.PreferencesGroup(title=_("Viftevern"))
         page.add(g)
         syncing = [False]   # ikke send endringer når bryterne oppdateres herfra
@@ -1358,6 +1554,14 @@ class MainWindow(Adw.ApplicationWindow):
             syncing[0] = False
             failsafe.set_sensitive(not mcp)
             lost.set_sensitive(not mcp)
+            emergency = mcp or safety.get("failsafe_enabled")
+            sensor = mcp or safety.get("sensor_lost_enabled", True)
+            hero.set_status(_("Beskyttelsen er aktiv") if emergency and sensor else _("Beskyttelsen er delvis av"),
+                            " · ".join(([_("Nødmodus ved {}").format(self.model.fmt_temp(safety.get("failsafe_temp", 95)))]
+                                        if emergency else [_("Nødmodus av")]) +
+                                       ([_("{} % ved sensortap").format(safety.get("sensor_lost_speed", 80))]
+                                        if sensor else [_("Sikring ved sensortap er av")])),
+                            None if emergency and sensor else "warm")
             g.set_description(_("Claude har tilgang, så begge er slått på og kan ikke slås av. "
                                 "Temperaturen og hastigheten kan fortsatt justeres.") if mcp else
                               _("Begge er alltid på mens Claude-tilgang er slått på."))
@@ -1462,6 +1666,7 @@ class MainWindow(Adw.ApplicationWindow):
             return False
         if getattr(self, "_sync_safety", None):
             self._sync_safety(r.get("safety") or {})  # Sikkerhet-fanen i samme dialog
+        self.sync_claude_hero(r.get("safety") or {})
         # Ingen omstart trengs: tjenesten slipper Claude inn (eller ut) med en gang.
         self.toast(_("Claude-tilgang er slått på. Endringer lagres først når du ber om det.") if on
                    else _("Claude-tilgang er slått av"))

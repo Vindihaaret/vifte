@@ -1,6 +1,7 @@
 """Kurveredigering og små diagrammer (Cairo)."""
 import math
 
+import cairo
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -12,6 +13,14 @@ PAD_L, PAD_R, PAD_T, PAD_B = 40, 14, 12, 28
 def _color(widget, name, fallback):
     ok, rgba = widget.get_style_context().lookup_color(name)
     return rgba if ok else Gdk.RGBA(*fallback)
+
+
+def _fade(color, top, bottom, strength=0.28):
+    """Fyll som tones ut nedover."""
+    grad = cairo.LinearGradient(0, top, 0, bottom)
+    grad.add_color_stop_rgba(0, color.red, color.green, color.blue, strength)
+    grad.add_color_stop_rgba(1, color.red, color.green, color.blue, 0)
+    return grad
 
 
 class CurveGraph(Gtk.DrawingArea):
@@ -141,7 +150,7 @@ class CurveGraph(Gtk.DrawingArea):
             return next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
         for val in _ticks(x0, x1, nice(x1 - x0)):
             px, _ = self.to_px(val, y0)
-            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.12)
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.08)
             cr.move_to(px, ay)
             cr.line_to(px, ay + ah)
             cr.stroke()
@@ -152,7 +161,7 @@ class CurveGraph(Gtk.DrawingArea):
             cr.show_text(t)
         for val in _ticks(y0, y1, nice(y1 - y0)):
             _, py = self.to_px(x0, val)
-            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.12)
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.08)
             cr.move_to(ax, py)
             cr.line_to(ax + aw, py)
             cr.stroke()
@@ -166,6 +175,7 @@ class CurveGraph(Gtk.DrawingArea):
         # kurve (flat før første og etter siste punkt)
         cr.set_source_rgba(accent.red, accent.green, accent.blue, 1)
         cr.set_line_width(2.5)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
         pts = sorted(self.points)
         cr.move_to(*self.to_px(x0, pts[0][1]))
         for x, y in pts:
@@ -175,7 +185,7 @@ class CurveGraph(Gtk.DrawingArea):
         cr.line_to(*self.to_px(x1, y0))
         cr.line_to(*self.to_px(x0, y0))
         cr.close_path()
-        cr.set_source_rgba(accent.red, accent.green, accent.blue, 0.12)
+        cr.set_source(_fade(accent, ay, ay + ah))
         cr.fill()
         if self.editable:
             for i, (x, y) in enumerate(self.points):
@@ -190,8 +200,8 @@ class CurveGraph(Gtk.DrawingArea):
         if self.marker and self.marker[0] is not None:
             mx, my = self.marker
             px, _ = self.to_px(min(max(mx, x0), x1), y0)
-            cr.set_source_rgba(0.95, 0.35, 0.3, 0.8)
-            cr.set_line_width(1.5)
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.3)
+            cr.set_line_width(1)
             cr.set_dash([4, 3])
             cr.move_to(px, ay)
             cr.line_to(px, ay + ah)
@@ -199,8 +209,12 @@ class CurveGraph(Gtk.DrawingArea):
             cr.set_dash([])
             if my is not None:
                 _, py = self.to_px(x0, min(max(my, y0), y1))
-                cr.arc(px, py, 5, 0, 2 * math.pi)
-                cr.fill()
+                cr.arc(px, py, 5.5, 0, 2 * math.pi)
+                cr.set_source_rgba(accent.red, accent.green, accent.blue, 1)
+                cr.fill_preserve()
+                cr.set_source_rgba(1, 1, 1, 0.9)
+                cr.set_line_width(2)
+                cr.stroke()
 
 
 def _ticks(lo, hi, step):
@@ -259,7 +273,7 @@ class Sparkline(Gtk.DrawingArea):
                 cr.line_to(x, y)
             cr.line_to(run[-1][0], h)
             cr.close_path()
-            cr.set_source_rgba(accent.red, accent.green, accent.blue, 0.15)
+            cr.set_source(_fade(accent, 0, h))
             cr.fill()
             cr.move_to(*run[0])
             for x, y in run[1:]:
@@ -267,5 +281,6 @@ class Sparkline(Gtk.DrawingArea):
             if len(run) == 1:
                 cr.line_to(run[0][0] + 1, run[0][1])
             cr.set_source_rgba(accent.red, accent.green, accent.blue, 1)
-            cr.set_line_width(1.5)
+            cr.set_line_width(2)
+            cr.set_line_join(cairo.LINE_JOIN_ROUND)
             cr.stroke()

@@ -9,7 +9,7 @@ from ..config import (CURVE_TITLES, MIX_FUNCTIONS, SENSOR_TYPES, calibration_poi
                       custom_sensor_type, format_point, hysteresis, parse_point, set_hysteresis)
 from ..i18n import _  # noqa: E402
 from ..prompts import setup_prompt  # noqa: E402
-from .common import combo_row, entry_row, spin_row, switch_row  # noqa: E402
+from .common import StatusHero, combo_row, entry_row, spin_row, switch_row  # noqa: E402
 from .graph import CurveGraph  # noqa: E402
 
 
@@ -249,6 +249,10 @@ class CurveDialog(LiveDialog):
         cfg = self.model.cfg
         page = Adw.PreferencesPage()
         self.add(page)
+        top = Adw.PreferencesGroup()
+        page.add(top)
+        self.hero = StatusHero()
+        top.add(self.hero)
         g = Adw.PreferencesGroup(title=_("{}-kurve").format(_(CURVE_TITLES[kind])))
         page.add(g)
         g.add(entry_row(_("Navn"), self.name, self.rename))
@@ -261,8 +265,6 @@ class CurveDialog(LiveDialog):
         if cfg.is_new_format and kind in ("graph", "linear", "flat", "mix", "trigger", "auto", "sync"):
             g.add(combo_row(_("Utdata"), [(0, _("Prosent (%)")), (1, _("RPM (krever kalibrering)"))],
                             int(c.get("CommandMode", 0) or 0), self.set_mode))
-        self.live_row = Adw.ActionRow(title=_("Nå"))
-        g.add(self.live_row)
 
         getattr(self, f"build_{kind}", self.build_unknown)(page, c)
 
@@ -306,6 +308,10 @@ class CurveDialog(LiveDialog):
         self.graph.on_select = self.point_selected
         g.add(self.graph)
 
+        # Punktene som merkelapper: klikk for å velge et punkt og justere det under grafen.
+        self.pt_chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=8,
+                                    column_spacing=6, row_spacing=6, margin_top=8)
+        g.add(self.pt_chips)
         box = Gtk.Box(spacing=12, halign=Gtk.Align.CENTER, margin_top=8)
         self.pt_t = Gtk.SpinButton.new_with_range(-50, 200, 1)
         self.pt_v = Gtk.SpinButton.new_with_range(0, 100000, 1)
@@ -341,7 +347,23 @@ class CurveDialog(LiveDialog):
         self.curve()["Points"] = [format_point(x, y) for x, y in sorted(pts)]
         self.changed(False)
 
+    def fill_point_chips(self):
+        while (c := self.pt_chips.get_first_child()):
+            self.pt_chips.remove(c)
+        for n, (x, y) in enumerate(self.graph.points):
+            chip = Gtk.Button(label=f"{self.graph._fmt_x(x)} → {y:.0f}{self.graph.y_unit}")
+            chip.add_css_class("vifte-slim")
+            chip.add_css_class("suggested-action" if n == self.graph.selected else "flat")
+            chip.connect("clicked", self.select_point, n)
+            self.pt_chips.append(chip)
+
+    def select_point(self, _b, i):
+        self.graph.selected = i
+        self.graph.queue_draw()
+        self.point_selected(i)
+
     def point_selected(self, i):
+        self.fill_point_chips()
         sens = i is not None and i < len(self.graph.points)
         self.pt_box.set_visible(sens)
         if sens:
@@ -358,6 +380,7 @@ class CurveDialog(LiveDialog):
         self.graph.points.sort()
         self.graph.selected = self.graph.points.index((self.pt_t.get_value(), self.pt_v.get_value()))
         self.graph.queue_draw()
+        self.fill_point_chips()
         self.points_changed(self.graph.points)
 
     # ---- lineær
@@ -519,7 +542,7 @@ class CurveDialog(LiveDialog):
         if t is not None:
             parts.append(self.model.fmt_temp(t))
         parts.append("–" if v is None else f"{v:.0f}{unit}")
-        self.live_row.set_subtitle("  →  ".join(parts))
+        self.hero.set_status("  →  ".join(parts) or "–", _("Nå"), "live")
         if self.graph:
             self.graph.marker = (t, v)
             self.graph.queue_draw()

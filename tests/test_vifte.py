@@ -867,6 +867,30 @@ class StressLinkTests(unittest.TestCase):
                 self.assertEqual(stress_path(), exe, "found outside PATH")
 
 
+class LookTests(unittest.TestCase):
+    def test_heat_step_follows_temperature_and_does_not_flicker(self):
+        from vifte.gui.look import heat_step
+        self.assertEqual([heat_step(t) for t in (40, 55, 70, 85)], ["cool", "mild", "warm", "hot"])
+        self.assertEqual(heat_step(49, "mild"), "mild")   # like under grensen: blir stående
+        self.assertEqual(heat_step(47, "mild"), "cool")
+        self.assertEqual(heat_step(40, "hot"), "cool")
+        self.assertEqual(heat_step(40, "cool", emergency=True), "emergency")
+        self.assertIsNone(heat_step(None))
+
+    def test_status_and_fan_summary(self):
+        from vifte.gui.look import fan_summary, safety_state, temp_status
+        self.assertEqual([temp_status(t) for t in (40, 70, 85)], ["calm", "warm", "hot"])
+        self.assertEqual(fan_summary({"a": {"out": 20.0}, "b": {"out": 40.0}, "c": {"out": None},
+                                      "p": {"out": 70.0, "pump": "fixed"}}), (30.0, 2, 1))
+        self.assertEqual(fan_summary({}), (None, 0, 0))
+        ok = {"failsafe": {"enabled": True}}
+        self.assertEqual(safety_state(ok), "ok")
+        self.assertEqual(safety_state({"failsafe": {"enabled": False}}), "no_emergency")
+        self.assertEqual(safety_state({**ok, "paused": True}), "paused")
+        self.assertEqual(safety_state({**ok, "sensor_lost": {"controls": {"x": ["s"]}}}), "sensor_lost")
+        self.assertEqual(safety_state({"failsafe": {"enabled": True, "active": True}}), "emergency")
+
+
 class PromptTests(unittest.TestCase):
     def test_every_language_has_the_whole_setup_prompt(self):
         import re
