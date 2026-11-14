@@ -961,5 +961,471 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
 
+# ====================================================================== robusthet
+
+class RobustnessTests(unittest.TestCase):
+    """Feil funnet i kodegjennomgangen: hver test feilet før rettelsen."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.engine, self.fake = make_engine()
+        self.d = Daemon(self.dir, dry_run=True, engine=self.engine)
+        self.d.handle({"cmd": "settings", "mcp_enabled": True, "mcp_floor": 25, "failsafe_temp": 90})
+        self.d.engine.tick()
+        nowait = mock.patch.object(Daemon, "_wait", lambda *_a: None)
+        nowait.start()
+        self.addCleanup(nowait.stop)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def call(self, tool, **args):
+        return self.d.handle({"cmd": "mcp_call", "name": tool, "args": args})["result"]
+
+    def curve_on(self, *controls):
+        self.call("create_curve", name="CPU", type="graph", temperature_source=CPU,
+                  points=[[40, 30], [60, 55], [85, 100]])
+        for c in controls or (FAN0,):
+            self.call("configure_control", control=c, curve="CPU")
+
+    def pair(self, control=FAN0, fan="/lpc/nct6798d/fan/0"):
+        self.d.engine.cfg.control(control)["PairedFanSensor"] = {"Identifier": fan}
+
+    def task(self, undo=False):
+        return {"cancel": False, "progress": 0, "undo": undo}
+
+    def path(self, name="userConfig.json"):
+        return os.path.join(self.dir, "Configurations", name)
+
+    # ---- kalibrering
+    def test_calibration_without_speed_reading_fails_instead_of_stopping_the_fan(self):
+        self.curve_on()
+        self.pair()
+        self.d._rpm = lambda *_a, **_k: 0.0
+        for floor in (0, 25):
+            with self.assertRaises(RuntimeError) as cm:
+                self.d.calibrate(self.task(), FAN0, floor)
+            self.assertIn("turtall", str(cm.exception))
+        entry = self.d.engine.cfg.control(FAN0)
+        self.assertEqual((entry["SelectedStop"], entry["SelectedStart"], entry["Calibration"]), (0, 0, None))
+        self.d.engine.override.clear()
+        self.fake.temps[CPU] = 70.0
+        for _ in range(5):
+            self.d.engine.tick()
+        self.assertGreater(self.fake.backends[FAN0].value, 50)
+
+    def test_calibration_is_kept_when_the_configuration_changes_meanwhile(self):
+        self.curve_on()
+        self.pair()
+        calls = []
+
+        def rpm(*_a, **_k):
+            calls.append(1)
+            if len(calls) == 3:   # en endring i appen eller fra Claude midt i kalibreringen
+                self.d.handle({"cmd": "apply_config", "raw": self.d.engine.cfg.copy().raw})
+            return 800.0
+        self.d._rpm = rpm
+        self.assertEqual(self.d.calibrate(self.task(), FAN0, 25), {"points": 9})
+        self.assertEqual(len(self.d.engine.cfg.control(FAN0)["Calibration"]), 9)
+        calls.clear()
+        self.d.engine.cfg.control(FAN0)["Calibration"] = None
+        self.d.calibrate(self.task(), FAN0)
+        self.assertTrue(self.d.engine.cfg.control(FAN0)["Calibration"])
+
+    def test_claude_can_undo_after_its_own_calibration(self):
+        self.curve_on()
+        self.pair()
+        self.d._rpm = lambda *_a, **_k: 800.0
+        self.d.calibrate(self.task(undo=True), FAN0, 25)
+        self.assertTrue(self.d.engine.cfg.control(FAN0)["Calibration"])
+        self.call("undo")                                   # kalibreringen
+        self.assertIsNone(self.d.engine.cfg.control(FAN0)["Calibration"])
+        self.assertTrue(self.d.engine.cfg.control(FAN0)["Enable"])
+        self.call("undo")                                   # configure_control
+        self.assertFalse(self.d.engine.cfg.control(FAN0)["Enable"])
+
+    def test_calibration_started_in_the_app_is_not_claudes_to_undo(self):
+        self.curve_on()
+        self.pair()
+        self.d._rpm = lambda *_a, **_k: 800.0
+        self.d.calibrate(self.task(), FAN0, 25)
+        with self.assertRaises(McpError):
+            self.call("undo")
+        self.assertTrue(self.d.engine.cfg.control(FAN0)["Calibration"])
+
+    # ---- filer
+    def test_import_never_overwrites_an_existing_configuration(self):
+        self.curve_on()
+        self.d.save()
+        with open(self.path()) as f:
+            before = f.read()
+        self.assertIn('"CPU"', before)
+        text = FanControlConfig().dumps()
+        r = self.d.handle({"cmd": "import", "name": "userConfig.json", "text": text})
+        self.assertEqual(r["name"], "userConfig (2).json")
+        self.assertEqual(self.d.settings["current"], "userConfig (2).json")
+        with open(self.path()) as f:
+            self.assertEqual(f.read(), before)
+        # samme innhold en gang til gir ikke enda en kopi
+        self.assertEqual(self.d.handle({"cmd": "import", "name": "userConfig.json", "text": text})["name"],
+                         "userConfig (2).json")
+        self.assertEqual(self.d.handle({"cmd": "import", "name": "userConfig.json", "text": before})["name"],
+                         "userConfig.json")
+
+    def test_failed_save_keeps_the_previous_file(self):
+        self.curve_on()
+        self.d.save()
+        with open(self.path()) as f:
+            before = f.read()
+        self.call("update_curve", name="CPU", points=[[40, 35], [85, 100]])
+        with mock.patch("vifte.daemon.os.fsync", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            self.d.save()
+        with open(self.path()) as f:
+            self.assertEqual(f.read(), before)
+        self.assertTrue(self.d.dirty)
+        self.d.save()
+        with open(self.path() + ".bak") as f:
+            self.assertEqual(f.read(), before)
+
+    def test_backups_are_pruned_per_configuration(self):
+        self.curve_on()
+        self.d.save()
+        bdir = os.path.join(self.dir, "Configurations", "backups")
+        os.makedirs(bdir)
+        for i in range(32):
+            open(os.path.join(bdir, f"userConfig-20261101-0000{i:02d}.json"), "w").close()
+        self.d.save("alpha")
+        self.call("save_configuration")
+        files = os.listdir(bdir)
+        self.assertEqual(len([f for f in files if f.startswith("alpha-")]), 1)
+        self.assertEqual(len([f for f in files if f.startswith("userConfig-")]), 32)   # ikke alpha sin sak
+        self.d.load("userConfig.json")
+        self.call("save_configuration")
+        files = sorted(f for f in os.listdir(bdir) if f.startswith("userConfig-"))
+        self.assertEqual(len(files), 30)
+        self.assertNotIn("userConfig-20261101-000000.json", files)   # de eldste ryker først
+
+    def test_corrupt_configuration_at_startup_falls_back_to_the_backup(self):
+        self.curve_on()
+        self.d.save()
+        self.d.save()                       # nå har også .bak kurven
+        with open(self.path(), "w") as f:
+            f.write("{ødelagt")
+        with self.assertLogs("vifte", "ERROR"):
+            d = Daemon(self.dir, dry_run=True, engine=make_engine()[0])
+        self.assertEqual([c["Name"] for c in d.engine.cfg.curves], ["CPU"])
+        self.assertTrue(os.path.exists(self.path() + ".corrupt"))
+
+    def test_corrupt_configuration_without_backup_starts_empty(self):
+        for text in ("{ødelagt", "[1, 2]", '{"FanControl": {"Controls": 5}}'):
+            with open(self.path(), "w") as f:
+                f.write(text)
+            if os.path.exists(self.path() + ".bak"):
+                os.remove(self.path() + ".bak")
+            with self.subTest(text=text), self.assertLogs("vifte", "ERROR"):
+                d = Daemon(self.dir, dry_run=True, engine=make_engine()[0])
+                self.assertEqual(d.engine.cfg.curves, [])
+                self.assertEqual(len(d.engine.cfg.controls), 2)
+
+    def test_corrupt_settings_do_not_stop_the_service(self):
+        state = os.path.join(self.dir, "state.json")
+        for text in ('{"interval": "x", "mcp_floor": null, "failsafe_temp": NaN, "current": 5, '
+                     '"pumps": [1], "aliases": "a", "claude_locked": {"a": 1}}', "[1, 2]",
+                     '{"pumps": {"' + FAN0 + '": {"mode": "fixed", "speed": "fast"}}}'):
+            with open(state, "w") as f:
+                f.write(text)
+            with self.subTest(text=text[:20]):
+                d = Daemon(self.dir, dry_run=True, engine=make_engine()[0])
+                self.assertEqual((d.engine.interval, d.settings["failsafe_temp"], d.settings["current"]),
+                                 (1.0, 95.0, "userConfig.json"))
+
+    # ---- regulering
+    def test_one_broken_control_does_not_stop_the_others(self):
+        self.curve_on(FAN0, FAN1)
+        for _ in range(3):
+            self.d.engine.tick()
+        self.assertTrue(self.fake.backends[FAN0].taken)
+        cfg = self.d.engine.cfg.copy()
+        cfg.control(FAN0).update(ManualControl=True, ManualControlValue=None)   # som i en importert fil
+        self.d.handle({"cmd": "apply_config", "raw": cfg.raw})
+        self.fake.temps[CPU] = 85.0
+        with self.assertLogs("vifte.engine", "ERROR") as logs:
+            for _ in range(12):
+                self.d.engine.tick()
+        self.assertEqual(len(logs.output), 1)                     # logges én gang, ikke hvert sekund
+        self.assertEqual(self.fake.backends[FAN1].value, 100.0)   # naboen følger kurven
+        self.assertFalse(self.fake.backends[FAN0].taken)          # den ødelagte er gitt til BIOS
+        self.assertIn("error", self.d.engine.control_state[FAN0])
+        cfg.control(FAN0).update(ManualControlValue=50)
+        self.d.handle({"cmd": "apply_config", "raw": cfg.raw})
+        with self.assertLogs("vifte.engine", "WARNING"):
+            self.d.engine.tick()
+        self.assertNotIn("error", self.d.engine.control_state[FAN0])
+        self.assertEqual(self.fake.backends[FAN0].value, 50.0)
+
+    def test_broken_control_still_gets_emergency_speed(self):
+        self.curve_on(FAN0)
+        self.d.engine.tick()
+        cfg = self.d.engine.cfg.copy()
+        cfg.control(FAN0).update(ManualControl=True, ManualControlValue=None)
+        self.d.handle({"cmd": "apply_config", "raw": cfg.raw})
+        self.fake.temps[CPU] = 95.0
+        with self.assertLogs("vifte.engine", "WARNING"):
+            self.d.engine.tick()
+            self.d.engine.tick()
+        self.assertEqual(self.fake.backends[FAN0].value, 100.0)
+
+    def test_entries_that_are_not_objects_are_skipped(self):
+        self.curve_on(FAN1)
+        cfg = self.d.engine.cfg.copy()
+        cfg.controls.insert(0, None)
+        cfg.custom_sensors.append("x")
+        self.d.handle({"cmd": "apply_config", "raw": cfg.raw})
+        with self.assertLogs("vifte.engine", "ERROR"):
+            self.d.engine.tick()
+        self.assertTrue(self.fake.backends[FAN1].taken)
+
+    def test_repeated_failures_hand_the_fans_back(self):
+        self.curve_on(FAN0, FAN1)
+        self.d.step()
+        self.assertTrue(self.fake.backends[FAN0].taken)
+        with mock.patch.object(self.d.engine, "tick", side_effect=RuntimeError("x")), \
+                self.assertLogs("vifte", "ERROR"):
+            for _ in range(Daemon.TICK_FAILURES_BEFORE_RELEASE - 1):
+                self.d.step()
+            self.assertTrue(self.fake.backends[FAN0].taken)      # et enkelt hikk slipper ikke viftene
+            self.d.step()
+        self.assertFalse(self.fake.backends[FAN0].taken or self.fake.backends[FAN1].taken)
+        self.d.step()
+        self.assertTrue(self.fake.backends[FAN0].taken)          # og styringen tas opp igjen
+
+    def test_fans_are_taken_again_after_resume(self):
+        self.curve_on()
+        self.d.step()
+        backend = self.fake.backends[FAN0]
+        backend.taken, backend.writes = False, []      # BIOS/driveren tok viften under hvilemodus
+        self.d.step()
+        self.assertEqual(backend.writes, [])           # uendret verdi skrives ikke på nytt av seg selv
+        self.d.reapply.set()
+        self.d.step()
+        self.assertTrue(backend.taken)
+        self.assertEqual(len(backend.writes), 1)
+        self.assertFalse(self.d.reapply.is_set())
+
+    def test_not_a_number_never_becomes_zero_percent(self):
+        with self.assertRaises(McpError) as cm:
+            self.call("create_curve", name="L", type="linear", temperature_source=CPU, min_temp=40,
+                      max_temp=80, min_speed=float("nan"))
+        self.assertIn("finite", str(cm.exception))
+        with self.assertRaises(McpError):
+            self.call("configure_control", control=FAN0, manual=float("inf"))
+        # og i motoren: en NaN-temperatur er «ingen verdi», ikke 0 %
+        self.curve_on()
+        self.d.engine.tick()
+        before = self.fake.backends[FAN0].value
+        self.fake.temps[CPU] = float("nan")
+        self.d.engine.tick()
+        self.assertEqual(self.fake.backends[FAN0].value, before)
+
+    def test_file_sensor_reads_only_regular_files(self):
+        fifo = os.path.join(self.dir, "pipe")
+        os.mkfifo(fifo)                                 # å åpne den ville hengt reguleringen
+        with open(os.path.join(self.dir, "sensors", "nan.sensor"), "w") as f:
+            f.write("nan\n")
+        with open(os.path.join(self.dir, "sensors", "ok.sensor"), "w") as f:
+            f.write("42,5\n")
+        cfg = self.d.engine.cfg.copy()
+        cfg.custom_sensors.extend([{"Identifier": "File/pipe", "Name": "pipe", "FileName": fifo},
+                                   {"Identifier": "File/nan", "Name": "nan", "FileName": "nan"},
+                                   {"Identifier": "File/ok", "Name": "ok", "FileName": "ok"}])
+        self.d.handle({"cmd": "apply_config", "raw": cfg.raw})
+        self.d.engine.tick()
+        self.assertEqual(self.d.engine.custom_values, {"File/pipe": None, "File/nan": None, "File/ok": 42.5})
+
+    # ---- samtidige endringer
+    def test_app_cannot_overwrite_newer_changes(self):
+        rev, raw = self.d.rev, self.d.engine.cfg.copy().raw
+        self.curve_on()
+        with self.assertRaises(RuntimeError):
+            self.d.handle({"cmd": "apply_config", "raw": raw, "rev": rev})
+        self.assertEqual([c["Name"] for c in self.d.engine.cfg.curves], ["CPU"])
+        self.d.handle({"cmd": "apply_config", "raw": self.d.engine.cfg.copy().raw, "rev": self.d.rev})
+
+    def test_app_sends_the_revision_it_builds_on(self):
+        from vifte.gui.common import Model
+        client = mock.Mock()
+        client.call.return_value = {"rev": 8}
+        m = Model(client)
+        m.rev = 7
+        m.push()
+        self.assertEqual(client.call.call_args.kwargs["rev"], 7)
+        self.assertEqual(m.rev, 8)
+
+    def test_graphics_card_fans_are_paired_without_running_them(self):
+        fake = FakeHardware()
+        sensors, controls = fake.build()
+        nv = FakeBackend()
+        controls.append(hw.Control("NVApiWrapper/0-AD103-A/control/0", "Control 1", "NVIDIA", nv))
+        sensors.append(hw.Sensor("NVApiWrapper/0-AD103-A/fan/0", "Fan 1", hw.FAN, "NVIDIA", lambda: 0.0))
+        d = Daemon(tempfile.mkdtemp(), dry_run=True, engine=Engine(dry_run=True, hardware=(sensors, controls)))
+        self.addCleanup(shutil.rmtree, d.data_dir)
+        d._rpm = lambda *_a, **_k: 800.0
+        result = d.pair(self.task())
+        self.assertEqual(result, {"NVApiWrapper/0-AD103-A/control/0": "NVApiWrapper/0-AD103-A/fan/0"})
+        self.assertNotIn("NVApiWrapper/0-AD103-A/control/0", d.engine.override)
+        self.assertIn(FAN0, d.engine.override)
+        entry = d.engine.cfg.control("NVApiWrapper/0-AD103-A/control/0")
+        self.assertEqual(entry["PairedFanSensor"]["Identifier"], "NVApiWrapper/0-AD103-A/fan/0")
+
+    def test_watchdog_message_reaches_systemd(self):
+        import socket
+        from vifte.daemon import sd_notify
+        path = os.path.join(self.dir, "notify")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.bind(path)
+            s.settimeout(2)
+            with mock.patch.dict(os.environ, {"NOTIFY_SOCKET": path}):
+                sd_notify("WATCHDOG=1")
+            self.assertEqual(s.recv(64), b"WATCHDOG=1")
+        with mock.patch.dict(os.environ, {"NOTIFY_SOCKET": ""}):
+            sd_notify("WATCHDOG=1")       # uten systemd: ingenting skjer
+
+    def test_resume_reloads_instead_of_restarting(self):
+        data = os.path.join(os.path.dirname(__file__), "..", "data")
+        with open(os.path.join(data, "vifte-resume.service")) as f:
+            resume = f.read()
+        with open(os.path.join(data, "vifted.service")) as f:
+            service = f.read()
+        self.assertIn("systemctl reload vifted.service", resume)
+        self.assertNotIn("restart", resume)       # en omstart ville forkastet ulagrede endringer
+        for line in ("ExecReload=/bin/kill -USR1 $MAINPID", "WatchdogSec=", "--release-fans"):
+            self.assertIn(line, service)
+
+
+class HwmonTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.boot = self.write("boot_id", "boot-1")
+        for p in (mock.patch.object(hw.ModeStore, "path", os.path.join(self.dir, "pwm_modes.json")),
+                  mock.patch.object(hw.ModeStore, "BOOT_ID", self.boot)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def write(self, name, text):
+        path = os.path.join(self.dir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def read(self, name):
+        with open(os.path.join(self.dir, name)) as f:
+            return f.read().strip()
+
+    def test_bios_mode_is_remembered_across_a_killed_service(self):
+        self.write("pwm1", "128")
+        self.write("pwm1_enable", "5")            # Smart Fan IV, slik BIOS satte den
+        first = hw.HwmonPwm(self.dir, 1)
+        first.take()
+        self.assertEqual(self.read("pwm1_enable"), "1")
+        # tjenesten blir drept her; den nye finner utgangen i manuell modus
+        second = hw.HwmonPwm(self.dir, 1)
+        second.take()
+        second.release()
+        self.assertEqual(self.read("pwm1_enable"), "5")
+
+    def test_unknown_manual_mode_falls_back_to_automatic(self):
+        self.write("pwm1", "128")
+        self.write("pwm1_enable", "1")
+        b = hw.HwmonPwm(self.dir, 1)
+        b.take()
+        b.release()
+        self.assertEqual(self.read("pwm1_enable"), "2")
+
+    def test_left_over_manual_fans_are_released(self):
+        self.write("pwm1", "128")
+        self.write("pwm1_enable", "5")
+        self.write("pwm2", "128")
+        self.write("pwm2_enable", "5")
+        for n in (1, 2):
+            hw.HwmonPwm(self.dir, n).take()
+        self.write("pwm2_enable", "5")            # denne ble gitt tilbake på vanlig måte
+        self.assertEqual(hw.restore_saved_modes(), 1)
+        self.assertEqual((self.read("pwm1_enable"), self.read("pwm2_enable")), ("5", "5"))
+        self.assertEqual(hw.restore_saved_modes(), 0)
+
+    def test_saved_modes_do_not_survive_a_reboot(self):
+        self.write("pwm1", "128")
+        self.write("pwm1_enable", "5")
+        hw.HwmonPwm(self.dir, 1).take()
+        self.write("boot_id", "boot-2")
+        self.assertEqual(hw.ModeStore.load(), {})
+        self.assertEqual(hw.restore_saved_modes(), 0)
+        self.assertEqual(self.read("pwm1_enable"), "1")
+
+    def test_many_ccds_do_not_collide_with_the_summary_sensors(self):
+        self.write("hwmon0/name", "k10temp")
+        self.write("hwmon0/temp1_input", "40000")
+        self.write("hwmon0/temp1_label", "Tctl")
+        for k in range(1, 9):
+            self.write(f"hwmon0/temp{k + 2}_input", str(30000 + k * 1000))
+            self.write(f"hwmon0/temp{k + 2}_label", f"Tccd{k}")
+        with mock.patch.object(hw.glob, "glob", return_value=[os.path.join(self.dir, "hwmon0")]):
+            sensors, _controls = hw.scan_hwmon()
+        ids = {s.id: s.name for s in sensors}
+        self.assertEqual(len(ids), len(sensors))
+        self.assertEqual(ids["/amdcpu/0/temperature/8"], "CCD6 (Tdie)")
+        self.assertEqual(ids["/amdcpu/0/temperature/9"], "CCDs Max (Tdie)")
+        self.assertEqual(ids["/amdcpu/0/temperature/10"], "CCDs Average (Tdie)")
+        self.assertEqual({ids["/amdcpu/0/temperature/29"], ids["/amdcpu/0/temperature/30"]},
+                         {"CCD7 (Tdie)", "CCD8 (Tdie)"})
+        for s in sensors:
+            s.update()
+        self.assertEqual({s.id: s.value for s in sensors}["/amdcpu/0/temperature/9"], 38.0)
+
+
+class ClientRetryTests(unittest.TestCase):
+    OK = b'{"ok": true, "n": 1}\n'
+
+    def client(self, *reads):
+        """En klient der hver ny forbindelse svarer med neste liste av linjer (eller kaster)."""
+        from vifte.client import Client
+        c = Client("/finnes/ikke")
+        files = []
+
+        def connect():
+            f = mock.Mock()
+            f.readline.side_effect = list(reads[len(files)])
+            files.append(f)
+            c.sock, c.file = mock.Mock(), f
+        c.connect = connect
+        return c, files
+
+    def test_timeout_is_never_retried(self):
+        c, files = self.client([TimeoutError("timed out")], [self.OK])
+        with self.assertRaises(TimeoutError):
+            c.call("load", name="x")
+        self.assertEqual(len(files), 1)                       # kommandoen ble sendt én gang
+        self.assertEqual(files[0].write.call_count, 1)
+        c, files = self.client([self.OK, TimeoutError("timed out")], [self.OK])
+        c.call("state")
+        with self.assertRaises(TimeoutError):
+            c.call("load", name="x")
+        self.assertEqual(len(files), 1)
+
+    def test_stale_connection_is_retried_once(self):
+        c, files = self.client([self.OK, b""], [self.OK])     # tjenesten ble startet på nytt
+        c.call("state")
+        self.assertEqual(c.call("state"), {"n": 1})
+        self.assertEqual(len(files), 2)
+
+    def test_fresh_connection_that_closes_is_not_retried(self):
+        c, files = self.client([b""], [self.OK])
+        with self.assertRaises(ConnectionError):
+            c.call("state")
+        self.assertEqual(len(files), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

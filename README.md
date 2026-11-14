@@ -133,7 +133,9 @@ every change Claude makes.
 ### Safety
 
 The rules are enforced by the Vifte service itself – not by Claude or the MCP process – so they apply
-however Claude connects:
+to everything Claude does through the Vifte tools. They guard against mistakes by Claude; they are not a
+security boundary against your own user account, since every member of the `vifte` group can control the
+service directly:
 
 * **Fans never stop.** Nothing Claude configures can take a fan below the *lowest fan speed* (default
   25 %, set by you in the app). Stop % can't be set above the lowest possible output, and calibration done
@@ -152,7 +154,8 @@ however Claude connects:
   fan back to the BIOS is always allowed.
 * **Easy to undo.** Changes take effect immediately but are not saved until Claude (with your OK) saves
   them; every save keeps a timestamped backup in `/var/lib/vifte/Configurations/backups/`. Claude can undo
-  its own changes as long as you haven't changed the configuration in the app since.
+  its own changes – including a pairing or calibration it started – as long as you haven't changed the
+  configuration in the app since.
 
 ### Tools
 
@@ -172,7 +175,9 @@ however Claude connects:
 ## Using a configuration from Windows
 
 1. Copy the file from `FanControl\Configurations\` on Windows (e.g. `userConfig.json`).
-2. In Vifte: **Menu → Import FanControl configuration …** (or `vifte -c userConfig.json`).
+2. In Vifte: **Menu → Import FanControl configuration …** (or `vifte -c userConfig.json`). An import
+   never overwrites a configuration you already have: if the name is taken, the new one is stored as
+   `userConfig (2).json`.
 3. If some sensors don't exist on Linux under the same identifier, a banner appears. Click **Map …** and
    choose which Linux sensor each entry should use. The mapping is stored *outside* the file, so the
    file still works in FanControl on Windows.
@@ -255,7 +260,14 @@ highest value. Useful when tuning curves by hand.
 **Suspend and resume:** after the PC wakes from sleep or hibernation, Vifte takes the fans back by
 itself. Some hwmon drivers reset `pwm_enable` on resume, which silently hands the fans to the BIOS; Vifte
 checks the mode before every write and sets manual mode again if it was lost, and `vifte-resume.service`
-also restarts the service after resume.
+tells the service to take every fan again after resume. The service is not restarted, so unsaved changes
+survive sleep.
+
+**If something goes wrong:** a control with invalid settings is handed back to the BIOS without
+affecting the other fans. If the control loop fails repeatedly, all fans are handed back, and if it hangs,
+systemd restarts the service. If the service is killed, the fans it left in manual mode are returned to
+the mode the BIOS had set. A configuration file that can't be read at startup is set aside as
+`.corrupt`, and the previous version (`.bak`) is used instead.
 
 **Load testing with Stress (optional):** [Stress](https://github.com/Vindihaaret/stress) is a separate,
 free program that puts the CPU and graphics card under controlled load while you watch the temperatures –
@@ -323,7 +335,9 @@ vifte uninstall [--purge]  uninstall (--purge also deletes the configurations)
 | `/var/lib/vifte/state.json` | active configuration, update interval, sensor mappings, safety settings, pumps and Claude locks |
 | `/var/lib/vifte/sensors/` | default folder for file sensors |
 | `/run/vifte/vifte.sock` | socket between the GUI and the service |
-| `/var/lib/vifte/Configurations/backups/` | backups made before Claude saves |
+| `/var/lib/vifte/Configurations/backups/` | backups made before Claude saves (the 30 newest per configuration) |
+| `/var/lib/vifte/Configurations/*.json.bak` | the previous version of each saved configuration |
+| `/var/lib/vifte/pwm_modes.json` | the fan modes the BIOS had set, until the next reboot |
 | `~/.config/vifte/settings.json` | per-user settings (language, tray, alerts, update checks) |
 
 ## Development

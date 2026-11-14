@@ -3,6 +3,9 @@
 Alt her kjører i tjenesten (vifted), ikke i MCP-prosessen, slik at reglene gjelder
 uansett hvem som kobler til. Prinsippene:
 
+Reglene gjelder verktøyene her. De er et vern mot feil fra Claude, ikke en sikkerhetsgrense
+mot brukeren: alle i gruppen «vifte» kan styre tjenesten direkte.
+
 * Claude kan aldri få en styrt vifte til å stoppe: alt Claude setter eller endrer må
   holde utgangen på minst «gulvet» (standard 25 %), og stopp-% kan ikke ligge over det.
 * Kurver Claude lager eller endrer må stige med temperaturen og nå 100 % senest ved
@@ -16,7 +19,9 @@ uansett hvem som kobler til. Prinsippene:
 """
 import copy
 import json
+import math
 import os
+import re
 import time
 
 from . import hw
@@ -40,9 +45,12 @@ class McpError(RuntimeError):
 
 def _num(v, name):
     try:
-        return float(v)
+        v = float(v)
     except (TypeError, ValueError):
         raise McpError(f"'{name}' must be a number") from None
+    if not math.isfinite(v):    # NaN ville sluppet gjennom alle sammenligninger med gulvet
+        raise McpError(f"'{name}' must be a finite number")
+    return v
 
 
 class McpApi:
@@ -747,7 +755,7 @@ class McpApi:
 
     # ------------------------------------------------------------------ oppgaver
     def t_pair_fans(self):
-        self.d._start_task("pair", self.d.pair, self.floor, self.d.protected_for_claude())
+        self.d._start_task("pair", self.d.pair, self.floor, self.d.protected_for_claude(), undo=True)
         self.d.log_mcp("Startet paring av vifter")
         return {"started": True, "hint": "poll get_task every ~15 s"}
 
@@ -756,7 +764,7 @@ class McpApi:
         local = self.d.engine.resolve(c.get("Identifier"))
         if local is not None and local.id in self.d.protected_for_claude():
             raise McpError("this control is a pump or locked by the user – Claude can't calibrate it")
-        self.d._start_task("calibrate", self.d.calibrate, c.get("Identifier"), self.floor)
+        self.d._start_task("calibrate", self.d.calibrate, c.get("Identifier"), self.floor, undo=True)
         self.d.log_mcp("Startet kalibrering av «{}»", c.get("NickName") or c.get("Identifier"))
         return {"started": True, "hint": "poll get_task every ~15 s"}
 
@@ -764,7 +772,7 @@ class McpApi:
         t = self.d.task
         if not t:
             return {"task": None}
-        return {k: v for k, v in t.items() if k not in ("cancel", "msg")}
+        return {k: v for k, v in t.items() if k not in ("cancel", "msg", "undo")}
 
     # ------------------------------------------------------------------ konfigurasjoner
     def t_list_configurations(self):
@@ -778,11 +786,11 @@ class McpApi:
         if self.d.dirty:
             raise McpError("the active configuration has unsaved changes – save or undo first")
         # Pumper følger maskinen og påvirkes ikke av konfigurasjonen; låste vifter må være like.
-        target = FanControlConfig.load(self.d.path(name))
-        self.d._add_hardware(target)
         with self.d.lock:
+            target = FanControlConfig.load(self.d.path(name))
+            self.d._add_hardware(target)
             self.check_protected(self.d.engine.cfg, target, include_pumps=False)
-        self.d.load(name)
+            self.d.load(name)
         self.d.log_mcp("Byttet til konfigurasjonen «{}»", name)
         return {"active": self.d.settings["current"]}
 
@@ -812,9 +820,13 @@ class McpApi:
             dst = os.path.join(bdir, f"{name[:-5]}-{stamp}-{n}.json")
         with open(src, "rb") as f, open(dst, "wb") as g:
             g.write(f.read())
-        files = sorted(os.listdir(bdir))
-        for old in files[:-30]:
+        # De 30 nyeste beholdes per konfigurasjon (tidsstempelet sorterer kronologisk).
+        own = re.compile(re.escape(name[:-5]) + r"-\d{8}-\d{6}(-\d+)?\.json")
+        files = sorted(f for f in os.listdir(bdir) if own.fullmatch(f))
+        for old in files[:-self.BACKUPS_KEPT]:
             os.remove(os.path.join(bdir, old))
+
+    BACKUPS_KEPT = 30
 
     def t_undo(self):
         d = self.d

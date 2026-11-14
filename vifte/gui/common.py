@@ -58,7 +58,8 @@ class Model:
         self.name = r["name"]
 
     def push(self, save=False):
-        r = self.client.call("apply_config", raw=self.cfg.raw, save=save)
+        r = self.client.call("apply_config", raw=self.cfg.raw, save=save,
+                             rev=self.rev if self.rev >= 0 else None)
         self.rev = r["rev"]
 
     @property

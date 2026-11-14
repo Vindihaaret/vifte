@@ -524,6 +524,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.model.push()
         except Exception as ex:
             self.toast(_("Kunne ikke sende endring: {}").format(_(str(ex))))
+            self.model.rev = -1   # hent tjenestens utgave på nytt ved neste oppdatering
         if rebuild:
             self.rebuild()
 
@@ -1294,7 +1295,14 @@ class MainWindow(Adw.ApplicationWindow):
             if r:
                 self.toast(_("Importert som {}").format(r["name"]))
                 self.poll()
-        fd.open(self, None, done)
+
+        def start():
+            fd.open(self, None, done)
+        # Importen bytter til den nye konfigurasjonen; spør før ulagrede endringer forsvinner.
+        if self.model.state.get("dirty"):
+            self.confirm_discard(start)
+        else:
+            start()
 
     def export_config(self):
         fd = Gtk.FileDialog(title=_("Eksporter konfigurasjon"), initial_name=self.model.name,
