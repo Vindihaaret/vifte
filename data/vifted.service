@@ -7,6 +7,13 @@ Wants=systemd-modules-load.service
 Type=simple
 Environment=PYTHONPATH=/opt/vifte
 ExecStart=/usr/bin/python3 -m vifte.daemon
+# Etter hvilemodus: ta viftene på nytt uten omstart (se vifte-resume.service)
+ExecReload=/bin/kill -USR1 $MAINPID
+# Ble tjenesten avbrutt uten å gi fra seg viftene, gis de tilbake til BIOS her
+ExecStopPost=-/usr/bin/python3 -m vifte.daemon --release-fans
+# Henger reguleringen, starter systemd tjenesten på nytt
+WatchdogSec=45
+NotifyAccess=main
 Restart=on-failure
 RestartSec=3
 RuntimeDirectory=vifte

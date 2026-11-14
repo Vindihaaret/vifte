@@ -7,6 +7,7 @@ konfigurasjonsfiler kan brukes på begge operativsystemer.
 """
 import ctypes as C
 import glob
+import json
 import logging
 import os
 import re
@@ -72,6 +73,15 @@ class Control:
             self.backend.write(percent)
             self.applied = percent
 
+    def retake(self):
+        """Etter hvilemodus kan BIOS/driveren ha tatt viften tilbake uten at det synes
+        (skjermkort): ta styringen på nytt og skriv verdien igjen ved neste oppdatering."""
+        try:
+            self.backend.take()
+        except Exception as e:
+            log.warning("%s: kunne ikke ta styringen på nytt: %s", self.id, e)
+        self.applied = None
+
     def release(self):
         if self.taken:
             try:
@@ -95,10 +105,71 @@ def _write(path, value):
         f.write(str(value))
 
 
+class ModeStore:
+    """Husker på disk hva pwmN_enable sto på før Vifte tok over.
+
+    Blir tjenesten drept uten å gi fra seg viftene, står de igjen i manuell modus. Uten dette
+    ville neste oppstart tro at «manuell» var utgangspunktet og senere skrive en gjettet
+    automatisk modus i stedet for den BIOS brukte. Gjelder bare til maskinen startes på nytt
+    (da setter BIOS modusene igjen)."""
+    path = None
+    BOOT_ID = "/proc/sys/kernel/random/boot_id"
+
+    @classmethod
+    def load(cls):
+        if not cls.path:
+            return {}
+        try:
+            with open(cls.path, encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("boot") == _read(cls.BOOT_ID) and isinstance(data.get("modes"), dict):
+                return data["modes"]
+        except (OSError, ValueError, AttributeError):
+            pass
+        return {}
+
+    @classmethod
+    def get(cls, key):
+        return cls.load().get(key)
+
+    @classmethod
+    def put(cls, key, value):
+        if not cls.path:
+            return
+        modes = cls.load()
+        if modes.get(key) == value:
+            return
+        modes[key] = value
+        try:
+            tmp = cls.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"boot": _read(cls.BOOT_ID), "modes": modes}, f, indent=2)
+            os.replace(tmp, cls.path)
+        except OSError as e:
+            log.warning("kunne ikke lagre viftemodus: %s", e)
+
+
+def restore_saved_modes():
+    """Gir tilbake hovedkortvifter som står igjen i manuell modus etter at tjenesten ble
+    avbrutt. Returnerer antallet som ble satt tilbake."""
+    n = 0
+    for path, mode in ModeStore.load().items():
+        if not re.fullmatch(r"pwm\d+_enable", os.path.basename(path)) or not str(mode).isdigit():
+            continue
+        try:
+            if mode != "1" and _read(path) == "1":
+                _write(path, mode)
+                n += 1
+        except OSError as e:
+            log.warning("%s: kunne ikke gå tilbake til automatisk: %s", path, e)
+    return n
+
+
 class HwmonPwm:
     def __init__(self, base, n):
         self.pwm = f"{base}/pwm{n}"
         self.enable = f"{base}/pwm{n}_enable"
+        self.key = os.path.realpath(self.enable)
         self.has_enable = os.path.exists(self.enable)
         self.original_enable = None
         self.dry_run = False
@@ -113,7 +184,13 @@ class HwmonPwm:
 
     def take(self):
         if self.has_enable and self.original_enable is None:
-            self.original_enable = _read(self.enable)
+            mode = _read(self.enable)
+            if mode == "1":
+                # Allerede manuell: en tidligere Vifte ble avbrutt uten å gi fra seg viften.
+                mode = ModeStore.get(self.key) or mode
+            elif not self.dry_run:
+                ModeStore.put(self.key, mode)
+            self.original_enable = mode
         if self.dry_run:
             log.info("[tørrkjøring] %s = 1", self.enable)
         elif self.has_enable:
@@ -216,7 +293,8 @@ def scan_hwmon(dry_run=False):
                     ident, sname = f"{prefix}/temperature/2", "Core (Tctl/Tdie)"
                 elif (m := re.fullmatch(r"Tccd(\d+)", lab)):
                     k = int(m.group(1))
-                    ident, sname = f"{prefix}/temperature/{2 + k}", f"CCD{k} (Tdie)"
+                    # CCD7 og oppover ville kollidert med «CCDs Max/Average» (9 og 10).
+                    ident, sname = f"{prefix}/temperature/{2 + k if k <= 6 else 20 + n}", f"CCD{k} (Tdie)"
                     ccds.append(reader)
                 else:
                     ident = f"{prefix}/temperature/{20 + n}"

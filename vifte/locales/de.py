@@ -431,4 +431,10 @@ T = {
         "Stress konnte nicht gestartet werden: {}",
     "Stress is a separate, optional program by the same developer. It puts the CPU and graphics card under controlled load while you watch the temperatures, which is useful when tuning fan curves. Vifte works just as well without it.\n\nInstallation is described on the GitHub page.":
         "Stress ist ein eigenständiges, optionales Programm desselben Entwicklers. Es setzt Prozessor und Grafikkarte unter kontrollierte Last, während du die Temperaturen beobachtest – nützlich beim Einstellen von Lüfterkurven. Vifte funktioniert auch ohne es genauso gut.\n\nDie Installation ist auf der GitHub-Seite beschrieben.",
+    "the fan gave no speed reading during calibration – check that it is paired with the right speed sensor":
+        "der Lüfter lieferte während der Kalibrierung keine Drehzahl – prüfe, ob er mit dem richtigen Drehzahlsensor gekoppelt ist",
+    "the configuration was replaced during calibration":
+        "die Konfiguration wurde während der Kalibrierung gewechselt",
+    "the configuration was changed elsewhere – try again":
+        "die Konfiguration wurde an anderer Stelle geändert – bitte erneut versuchen",
 }

@@ -4,12 +4,15 @@ Styrer viftene uavhengig av om GUI-et er åpent, og snakker med GUI/CLI over en
 Unix-socket med linjebasert JSON: {"cmd": "...", ...} -> {"ok": true, ...}
 """
 import argparse
+import copy
 import grp
 import json
 import logging
+import math
 import os
 import pwd
 import re
+import shutil
 import signal
 import socket
 import socketserver
@@ -19,6 +22,7 @@ import threading
 import time
 from collections import deque
 
+from . import hw
 from .config import FanControlConfig, calibration_entry, calibration_points
 from .engine import Engine
 from .mcpapi import McpApi
@@ -46,8 +50,40 @@ def safe_name(name):
     return name
 
 
+def write_atomic(path, text, backup=False):
+    """Skriver filen ferdig ved siden av og bytter den inn til slutt, så en feil underveis
+    (full disk, strømbrudd) aldri etterlater en halv eller manglende fil. Med backup=True
+    kopieres den forrige utgaven til «.bak» først."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    if backup and os.path.exists(path):
+        try:
+            shutil.copyfile(path, path + ".bak")
+        except OSError as e:
+            log.warning("kunne ikke ta sikkerhetskopi av %s: %s", path, e)
+    os.replace(tmp, path)
+
+
+def sd_notify(message):
+    """Melding til systemd (vakthund). Gjør ingenting når tjenesten ikke er startet av systemd."""
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr.startswith("@"):
+        addr = "\0" + addr[1:]
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.sendto(message.encode(), addr)
+    except OSError:
+        pass
+
+
 class Daemon:
     HISTORY_EVERY = 5.0      # sekunder mellom hvert historikkpunkt
+    TICK_FAILURES_BEFORE_RELEASE = 5   # så mange mislykkede runder på rad før BIOS får viftene
     HISTORY_KEEP = 360       # 30 minutter
 
     def __init__(self, data_dir, dry_run=False, engine=None):
@@ -63,11 +99,29 @@ class Daemon:
                          "mcp_enabled": False, "mcp_floor": 25, "failsafe_enabled": False,
                          "failsafe_temp": 95, "sensor_lost_enabled": True, "sensor_lost_speed": 80,
                          "pumps": {}, "claude_locked": []}
+        defaults = dict(self.settings)
         try:
             with open(self.state_file) as f:
-                self.settings.update(json.load(f))
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                self.settings.update(loaded)
+            else:
+                log.error("%s er ugyldig, bruker standardinnstillinger", self.state_file)
         except (OSError, ValueError):
             pass
+        # En ødelagt verdi i filen skal ikke hindre tjenesten i å starte.
+        for key in ("interval", "mcp_floor", "failsafe_temp", "sensor_lost_speed"):
+            try:
+                if not math.isfinite(float(self.settings[key])):
+                    raise ValueError(key)
+            except (TypeError, ValueError):
+                self.settings[key] = defaults[key]
+        if not isinstance(self.settings.get("current"), str) or not self.settings["current"].strip():
+            self.settings["current"] = defaults["current"]
+        for key, kind in (("aliases", dict), ("pumps", dict), ("claude_locked", list)):
+            if not isinstance(self.settings.get(key), kind):
+                self.settings[key] = kind()
+        hw.ModeStore.path = None if self.engine.dry_run else os.path.join(data_dir, "pwm_modes.json")
         self.engine.interval = float(self.settings.get("interval", 1.0))
         self.engine.aliases = dict(self.settings.get("aliases") or {})
         self.apply_safety()
@@ -81,7 +135,12 @@ class Daemon:
         self.dirty = False
         self.task = None   # {"kind", "progress", "message", "cancel"}
         self.stop = threading.Event()
-        self.load(self.settings["current"], create=True)
+        self.reapply = threading.Event()   # settes etter hvilemodus (SIGUSR1)
+        self._failures = 0
+        try:
+            self.load(self.settings["current"], create=True)
+        except Exception as ex:
+            self._recover(self.settings["current"], ex)
 
     # ------------------------------------------------------------ filer
     def path(self, name):
@@ -101,8 +160,12 @@ class Daemon:
         pumps = {}
         for ident, p in (st.get("pumps") or {}).items():
             if isinstance(p, dict) and p.get("mode") in ("bios", "fixed"):
-                pumps[ident] = {"mode": p["mode"],
-                                "speed": int(max(Engine.PUMP_MIN, min(100, float(p.get("speed", 100)))))}
+                try:
+                    speed = float(p.get("speed", 100))
+                    speed = speed if math.isfinite(speed) else 100.0
+                except (TypeError, ValueError):
+                    speed = 100.0
+                pumps[ident] = {"mode": p["mode"], "speed": int(max(Engine.PUMP_MIN, min(100, speed)))}
         st["pumps"] = pumps
         st["claude_locked"] = sorted({str(i) for i in st.get("claude_locked") or []})
         self.engine.pumps = pumps
@@ -168,12 +231,10 @@ class Daemon:
         self.history.append({"t": round(now), "temps": temps, "controls": controls, "sensors": sensors})
 
     def save_settings(self):
-        self.settings["aliases"] = self.engine.aliases
-        self.settings["interval"] = self.engine.interval
-        tmp = self.state_file + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(self.settings, f, indent=2)
-        os.replace(tmp, self.state_file)
+        with self.lock:
+            self.settings["aliases"] = self.engine.aliases
+            self.settings["interval"] = self.engine.interval
+            write_atomic(self.state_file, json.dumps(self.settings, indent=2))
 
     def list_configs(self):
         # En ny konfigurasjon som ikke er lagret ennå, finnes bare i minnet, men vises likevel.
@@ -201,21 +262,57 @@ class Daemon:
     def load(self, name, create=False):
         name = safe_name(name)
         p = self.path(name)
-        if os.path.exists(p):
-            cfg = FanControlConfig.load(p)
-        elif create:
-            cfg = FanControlConfig()
-        else:
-            raise FileNotFoundError(name)
-        changed = self._add_hardware(cfg)
-        self._activate(cfg, name)
-        with self.lock:
+        with self.lock:   # hele byttet under låsen, så reguleringen aldri ser en halvferdig tilstand
+            if os.path.exists(p):
+                cfg = FanControlConfig.load(p)
+            elif create:
+                cfg = FanControlConfig()
+            else:
+                raise FileNotFoundError(name)
+            changed = self._add_hardware(cfg)
+            self._activate(cfg, name)
             if not os.path.exists(p):
-                cfg.save(p)
+                write_atomic(p, cfg.dumps())
             elif changed:
                 self.dirty = True
-        self.save_settings()
+            self.save_settings()
         log.info("konfigurasjon lastet: %s", name)
+
+    def _recover(self, name, ex):
+        """Den aktive konfigurasjonen lar seg ikke lese ved oppstart. Legg den til side og bruk
+        sikkerhetskopien, ellers en tom konfigurasjon: tjenesten må starte, ellers kan ikke
+        appen brukes til å rette opp noe."""
+        p = self.path(name)
+        log.error("kan ikke lese %s (%s)", p, ex)
+        if os.path.exists(p):
+            os.replace(p, p + ".corrupt")
+            log.error("den ødelagte filen er lagt til side som %s.corrupt", p)
+        bak = p + ".bak"
+        if os.path.exists(bak):
+            try:
+                shutil.copyfile(bak, p)
+                self.load(name)
+                log.warning("bruker sikkerhetskopien %s", bak)
+                return
+            except Exception as ex2:
+                log.error("sikkerhetskopien kan heller ikke leses (%s)", ex2)
+                if os.path.exists(p):
+                    os.remove(p)
+        self.load(name, create=True)
+
+    def import_name(self, name, text):
+        """Navnet en importert fil lagres under. En konfigurasjon som finnes fra før blir aldri
+        overskrevet: er innholdet et annet, får den nye et ledig navn («navn (2).json»)."""
+        stem, n, cand = name[:-5], 1, name
+        while cand in self.list_configs():
+            try:
+                if FanControlConfig.load(self.path(cand)).dumps() == text:
+                    return cand
+            except (OSError, ValueError, AttributeError, TypeError):
+                pass
+            n += 1
+            cand = f"{stem} ({n}).json"
+        return cand
 
     def new(self, name):
         """Ny tom konfigurasjon. Den skrives ikke til disk før den lagres, så «Forkast» (bytte
@@ -224,11 +321,11 @@ class Daemon:
         if os.path.exists(self.path(name)):
             raise RuntimeError("det finnes allerede en konfigurasjon med det navnet")
         cfg = FanControlConfig()
-        self._add_hardware(cfg)
-        self._activate(cfg, name)
         with self.lock:
+            self._add_hardware(cfg)
+            self._activate(cfg, name)
             self.dirty = True
-        self.save_settings()
+            self.save_settings()
         log.info("ny konfigurasjon (ikke lagret): %s", name)
 
     def _activate(self, cfg, name):
@@ -244,40 +341,53 @@ class Daemon:
 
     def save(self, name=None):
         name = safe_name(name or self.settings["current"])
-        p = self.path(name)
-        if os.path.exists(p):
-            try:
-                os.replace(p, p + ".bak")
-            except OSError:
-                pass
-        tmp = p + ".tmp"
-        self.engine.cfg.save(tmp)
-        os.replace(tmp, p)
-        self.settings["current"] = name
-        self.dirty = False
-        self.save_settings()
+        with self.lock:
+            write_atomic(self.path(name), self.engine.cfg.dumps(), backup=True)
+            self.settings["current"] = name
+            self.dirty = False
+            self.save_settings()
 
     # ------------------------------------------------------------ hovedløkke
+    def step(self):
+        """Én runde i reguleringen. Feiler den flere ganger på rad, gis viftene tilbake til
+        BIOS/driveren i stedet for å bli stående på den siste verdien."""
+        with self.lock:
+            try:
+                if self.reapply.is_set():
+                    self.reapply.clear()
+                    log.info("tar viftene på nytt (etter hvilemodus)")
+                    self.engine.reapply()
+                self.engine.tick()
+                self.record_history()
+                self._failures = 0
+            except Exception:
+                log.exception("feil i reguleringsløkken")
+                self._failures += 1
+                if self._failures == self.TICK_FAILURES_BEFORE_RELEASE:
+                    log.error("reguleringen feiler gjentatte ganger – viftene gis tilbake til BIOS/driver")
+                if self._failures >= self.TICK_FAILURES_BEFORE_RELEASE:
+                    self.engine.release_all()
+
     def run(self):
+        sd_notify("READY=1")
         while not self.stop.is_set():
             start = time.monotonic()
-            with self.lock:
-                try:
-                    self.engine.tick()
-                    self.record_history()
-                except Exception:
-                    log.exception("feil i reguleringsløkken")
+            self.step()
+            sd_notify("WATCHDOG=1")   # uteblir den (reguleringen henger), starter systemd tjenesten på nytt
             self.stop.wait(max(0.05, self.engine.interval - (time.monotonic() - start)))
         with self.lock:
             self.engine.release_all()
         log.info("avsluttet, viftene er gitt tilbake til BIOS/driver")
 
     # ------------------------------------------------------------ bakgrunnsjobber
-    def _start_task(self, kind, fn, *args):
-        if self.task and not self.task.get("done"):
-            raise RuntimeError("en annen jobb kjører allerede")
-        self.task = {"kind": kind, "progress": 0.0, "done": False, "cancel": False, "result": None}
-        self._say(self.task, "Starter …")
+    def _start_task(self, kind, fn, *args, undo=False):
+        """undo=True (jobber Claude starter): resultatet blir et eget angre-trinn."""
+        with self.lock:
+            if self.task and not self.task.get("done"):
+                raise RuntimeError("en annen jobb kjører allerede")
+            self.task = {"kind": kind, "progress": 0.0, "done": False, "cancel": False, "result": None,
+                         "undo": undo}
+            self._say(self.task, "Starter …")
 
         def runner():
             try:
@@ -302,6 +412,26 @@ class Daemon:
         task["message"] = template.format(*args)
         task["msg"] = [template, [str(a) for a in args]]
 
+    def _task_commit(self, task, change):
+        """Fører resultatet av en jobb inn i konfigurasjonen (kalleren holder låsen). For jobber
+        Claude startet legges forrige tilstand på angre-stakken, så «angre» fortsatt virker."""
+        before = copy.deepcopy(self.engine.cfg.raw) if task.get("undo") else None
+        rev_before = self.rev
+        change()
+        self.rev += 1
+        self.dirty = True
+        if before is not None and (not self.undo_stack or self.undo_stack[-1][1] == rev_before):
+            self.undo_stack.append((before, self.rev))
+
+    def _commit_control(self, task, ident, change):
+        """Som _task_commit, for én kontroll. Oppføringen slås opp på nytt: konfigurasjonen kan
+        være byttet ut (endring i appen eller fra Claude) mens jobben gikk."""
+        with self.lock:
+            entry = self.engine.cfg.control(ident)
+            if entry is None:
+                raise RuntimeError("konfigurasjonen ble byttet under kalibreringen")
+            self._task_commit(task, lambda: change(entry))
+
     def _wait(self, task, seconds):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
@@ -322,7 +452,7 @@ class Daemon:
         """Kalibrering. Med min_percent > 0 (brukes av Claude) går viften aldri under den
         grensen, så stopp/start-søket hoppes over."""
         e = self.engine
-        entry = e.cfg.control(ident)
+        entry = e.cfg.control(ident) or {}
         ctl = e.resolve(ident)
         paired = (entry.get("PairedFanSensor") or entry.get("MatchingFanSensor") or {}).get("Identifier")
         fan = e.resolve(paired) if paired else None
@@ -348,13 +478,16 @@ class Daemon:
             self._wait(task, 4)
             table[p] = round(self._rpm(fan, task))
             task["progress"] = 0.6 * (i + 1) / len(steps)
+        if not any(table[p] > 0 for p in steps):
+            # Uten turtall ville stopp-søket endt på 100 % og slått viften av.
+            raise RuntimeError("viften ga ikke turtall under kalibreringen – sjekk at den er paret "
+                               "med riktig hastighetssensor")
         if min_percent > 0:
-            with self.lock:
+            def store_points(entry):
                 old = {int(p): r for p, r in calibration_points(entry.get("Calibration")) if p < min_percent}
                 table.update(old)
                 entry["Calibration"] = calibration_entry(table)
-                self.rev += 1
-                self.dirty = True
+            self._commit_control(task, ident, store_points)
             return {"points": len(table)}
         # Finn stopp-punkt: gå ned fra laveste punkt som fortsatt spinner.
         spinning = [p for p in steps if table[p] > 0]
@@ -392,13 +525,12 @@ class Daemon:
             task["progress"] = 0.95
         else:
             stop = start = 0
-        with self.lock:
+        def store(entry):
             entry["Calibration"] = calibration_entry(table)
             if not entry.get("SelectedStart") and not entry.get("SelectedStop"):
                 entry["SelectedStop"] = stop
                 entry["SelectedStart"] = max(start, stop)
-            self.rev += 1
-            self.dirty = True
+        self._commit_control(task, ident, store)
         return {"start": start, "stop": stop}
 
     def pair(self, task, min_percent=0, exclude=()):
@@ -408,6 +540,13 @@ class Daemon:
         fans = [s for s in e.sensors if s.kind == "fan"]
         controls = [c for c in e.controls if c.id not in e.pumps and c.id not in exclude]
         result = {}
+        # Skjermkort: vifte N hører alltid til utgang N, så de trenger ikke kjøres opp.
+        for c in list(controls):
+            m = re.fullmatch(r"(NVApiWrapper/[^/]+)/control/(\d+)", c.id)
+            fan = e.by_id.get(f"{m.group(1)}/fan/{m.group(2)}") if m else None
+            if fan is not None and fan.kind == "fan":
+                result[c.id] = fan.id
+                controls.remove(c)
         self._say(task, "Setter alle vifter til {} % …", level)
         with self.lock:
             for c in controls:
@@ -431,7 +570,7 @@ class Daemon:
                 result[c.id] = best
             task["progress"] = (i + 1) / len(controls)
             self._wait(task, 5)
-        with self.lock:
+        def store():
             cfg = e.cfg
             for entry in cfg.controls:
                 local = e.resolve(entry.get("Identifier"))
@@ -444,8 +583,8 @@ class Daemon:
                             fan_id = fs["Identifier"]
                             break
                     entry[key] = cfg.make_ref(fan_id, e.by_id[result[local.id]].name)
-            self.rev += 1
-            self.dirty = True
+        with self.lock:
+            self._task_commit(task, store)
         return result
 
     # ------------------------------------------------------------ kommandoer
@@ -457,7 +596,7 @@ class Daemon:
                 snap = e.snapshot()
             task = None
             if self.task:
-                task = {k: v for k, v in self.task.items() if k != "cancel"}
+                task = {k: v for k, v in self.task.items() if k not in ("cancel", "undo")}
             snap.update(rev=self.rev, dirty=self.dirty, current=self.settings["current"],
                         configs=self.list_configs(), task=task, interval=e.interval,
                         safety=self.safety(), mcp_log=list(self.mcp_log)[-10:])
@@ -469,6 +608,10 @@ class Daemon:
         if cmd == "apply_config":
             cfg = FanControlConfig(req["raw"])
             with self.lock:
+                # Appen sender hele konfigurasjonen; bygger den på en eldre utgave, ville den
+                # overskrevet det Claude eller en kalibrering har endret i mellomtiden.
+                if req.get("rev") is not None and req["rev"] != self.rev:
+                    raise RuntimeError("konfigurasjonen er endret et annet sted – prøv igjen")
                 self.commit_config(cfg)
                 if req.get("save"):
                     self.save(req.get("name"))
@@ -486,9 +629,12 @@ class Daemon:
         if cmd == "import":
             name = safe_name(req["name"])
             cfg = FanControlConfig.loads(req["text"]) if "text" in req else FanControlConfig(req.get("raw"))
-            cfg.save(self.path(name))
-            if req.get("activate", True):
-                self.load(name)
+            text = cfg.dumps()
+            with self.lock:
+                name = self.import_name(name, text)
+                write_atomic(self.path(name), text)
+                if req.get("activate", True):
+                    self.load(name)
             return {"name": name}
         if cmd == "export":
             name = safe_name(req.get("name") or self.settings["current"])
@@ -634,10 +780,18 @@ def main():
                     help="kjør som vanlig bruker med egen socket og tørrkjøring (for testing)")
     ap.add_argument("--dry-run", action="store_true", help="ikke skriv til maskinvaren")
     ap.add_argument("-c", "--config", help="last denne konfigurasjonen ved oppstart")
+    ap.add_argument("--release-fans", action="store_true",
+                    help="gi tilbake vifter som står igjen i manuell modus etter et avbrudd, og avslutt")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if a.release_fans:
+        hw.ModeStore.path = os.path.join(SYSTEM_DIR, "pwm_modes.json")
+        n = hw.restore_saved_modes()
+        if n:
+            log.warning("%d vifte(r) sto igjen i manuell modus og er gitt tilbake til BIOS", n)
+        return
     if a.user_test:
         data_dir, sock = user_paths()
         dry = True
@@ -675,6 +829,9 @@ def main():
         d.stop.set()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    # «systemctl reload vifted» (etter hvilemodus): ta viftene på nytt uten å starte tjenesten
+    # på nytt, så ulagrede endringer ikke går tapt.
+    signal.signal(signal.SIGUSR1, lambda *_: d.reapply.set())
     log.info("vifted kjører (socket %s%s)", sock, ", TØRRKJØRING" if dry else "")
     d.run()
     srv.shutdown()

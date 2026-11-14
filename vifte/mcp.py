@@ -22,7 +22,8 @@ and GPU via a custom sensor). After changing something, watch get_history for a 
 tuning further. Changes take effect immediately but are not saved until save_configuration – ask the
 user before saving. Use undo to revert your last change.
 
-Safety rules are enforced by Vifte and cannot be bypassed: fans you configure never go below the floor
+Safety rules are enforced by the Vifte service for everything you do through these tools – always use
+these tools to change fan control, never the socket, the CLI or the files directly: fans you configure never go below the floor
 percentage, curves must rise with temperature and reach 100 % by the emergency temperature, and above
 that temperature every controlled fan runs at 100 %. If a curve's sensor stops responding, its fans run
 at a fixed safe speed until it is back (see controls_with_lost_sensor in get_status). Pumps (AIO or

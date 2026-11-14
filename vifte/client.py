@@ -42,6 +42,7 @@ class Client:
 
     def call(self, cmd, **kw):
         for attempt in (0, 1):
+            reused = self.sock is not None
             try:
                 if self.sock is None:
                     self.connect()
@@ -52,9 +53,14 @@ class Client:
                     raise ConnectionError("tjenesten lukket forbindelsen")
                 resp = json.loads(line)
                 break
+            except TimeoutError:
+                # Tjenesten kan ha utført kommandoen: send den aldri en gang til.
+                self.close()
+                raise
             except (OSError, ConnectionError):
                 self.close()
-                if attempt:
+                # Bare en gammel forbindelse (tjenesten er startet på nytt) prøves én gang til.
+                if attempt or not reused:
                     raise
         if not resp.pop("ok", False):
             raise DaemonError(resp.get("error", "ukjent feil"))

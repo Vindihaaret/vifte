@@ -117,6 +117,7 @@ class Engine:
         # ikke i konfigurasjonen, og går foran alt konfigurasjonen sier om utgangen.
         self.pumps = {}
         self._zero_since = {}          # kontroll-id -> siden når utgangen har målt 0 RPM
+        self._control_errors = {}      # kontroll-id -> siste feilmelding (logges én gang)
 
     def _index(self):
         self.by_id = {}
@@ -125,6 +126,12 @@ class Engine:
         for s in self.sensors + self.controls:
             for a in s.aliases:
                 self.by_id.setdefault(a, s)
+
+    def reapply(self):
+        """Etter hvilemodus: ta alle styrte vifter på nytt og skriv verdiene igjen."""
+        for c in self.controls:
+            if c.taken:
+                c.retake()
 
     def rescan(self):
         self.release_all()
@@ -233,6 +240,9 @@ class Engine:
                 path = fn if os.path.isabs(fn) else os.path.join(self.sensor_dir, fn)
                 if not os.path.exists(path) and not path.endswith(".sensor"):
                     path += ".sensor"
+                if not os.path.isfile(path):
+                    # En navngitt pipe eller enhet ville hengt hele reguleringen.
+                    raise OSError(f"{path} er ikke en vanlig fil")
                 with open(path) as f:
                     v = float(f.readline().strip().replace(",", "."))
             else:  # offset
@@ -243,6 +253,8 @@ class Engine:
                     v = base * (1 + off / 100.0) if full.get("Proportional") else base + off
         except Exception as e:
             log.debug("egendefinert sensor %s: %s", ident, e)
+            v = None
+        if v is not None and v != v:   # NaN (f.eks. fra en fil) er ingen verdi
             v = None
         self.custom_values[ident] = v
         return v
@@ -302,6 +314,8 @@ class Engine:
         except Exception as e:
             st.error = str(e)
             log.debug("kurve %s: %s", name, e)
+        if v is not None and v != v:   # NaN: behandles som «ingen verdi», aldri som 0 %
+            v = None
         if v is not None:
             v = max(0.0, v)
         st.value = v
@@ -325,7 +339,7 @@ class Engine:
 
         t = self.temperature(c.get("SelectedTempSource"))
         st.input = t
-        if t is None:
+        if t is None or t != t:
             return st.value  # behold siste verdi hvis sensoren forsvinner et øyeblikk
 
         if kind == "graph":
@@ -430,94 +444,135 @@ class Engine:
             c.update()
         self.custom_values = {}
         for cs in self.cfg.custom_sensors:
-            self._custom(cs)
+            try:
+                self._custom(cs)
+            except Exception as ex:
+                log.debug("egendefinert sensor: %s", ex)
         self._evaluated = {}
         self._update_failsafe()
 
         for ctl_cfg in self.cfg.controls:
-            ident = ctl_cfg.get("Identifier")
-            ctl = self.resolve(ident)
-            state = self.control_state.setdefault(ident, {"out": None, "target": None})
-            paired = (ctl_cfg.get("PairedFanSensor") or ctl_cfg.get("MatchingFanSensor") or {}).get("Identifier")
-            ps = self.resolve(paired) if paired else None
-            state["rpm"] = ps.value if ps else None
-            state["found"] = ctl is not None
-            if ctl is None:
-                continue
-            state["read"] = ctl.value
-            pump = self.pumps.get(ctl.id)
-            state["pump"] = pump["mode"] if pump else None
-            state["no_fan"] = self.no_fan(ctl, state, ps or self.by_id.get(ctl.id.replace("/control/", "/fan/")), now)
-            if pump:
-                # Ingen kurver, kalibrering eller paring på en pumpe – bare BIOS eller fast hastighet.
-                state["lost"] = None
-                if pump["mode"] == "fixed" and not self.paused:
-                    v = 100.0 if self.failsafe_active else max(self.PUMP_MIN, float(pump.get("speed", 100)))
-                    self._apply(ctl, v, True)
-                    state["out"] = state["target"] = v
-                else:
-                    if ctl.taken:
-                        ctl.release()
-                    state["out"] = state["target"] = None
-                continue
-            if self.failsafe_active and not self.paused and (ctl.id in self.override or ctl_cfg.get("Enable")):
-                self._apply(ctl, 100.0, True)
-                state["out"] = state["target"] = 100.0
-                continue
-            if ctl.id in self.override:
-                self._apply(ctl, self.override[ctl.id], True)
-                state["out"] = state["target"] = self.override[ctl.id]
-                continue
-            if not ctl_cfg.get("Enable") or self.paused:
-                if ctl.taken:
-                    ctl.release()
-                state["out"] = state["target"] = state["lost"] = None
-                self._lost_since.pop(ident, None)
-                continue
-
-            curve = self.cfg.resolve_curve(ctl_cfg.get("SelectedFanCurve"))
-            lost = [] if ctl_cfg.get("ManualControl") or curve is None else \
-                self.curve_lost(ctl_cfg.get("SelectedFanCurve"))
-            if lost:
-                since = self._lost_since.setdefault(ident, now)
-            else:
-                self._lost_since.pop(ident, None)
-                if state.get("lost"):
-                    log.warning("%s: sensoren svarer igjen, vanlig styring", ident)
-            # Bare vifter Vifte allerede styrte; en sensor som aldri har virket lar BIOS styre.
-            if lost and self.sensor_lost_enabled and state["out"] is not None \
-                    and now - since >= self.SENSOR_LOST_AFTER:
-                if not state.get("lost"):
-                    log.warning("%s: sensor borte (%s), setter %.0f %%", ident, ", ".join(lost),
-                                self.sensor_lost_speed)
-                state["lost"] = sorted(set(lost))
-                self._apply(ctl, self.sensor_lost_speed, True)
-                state["out"] = state["target"] = self.sensor_lost_speed
-                continue
-            state["lost"] = None
-            if ctl_cfg.get("ManualControl"):
-                target = float(ctl_cfg.get("ManualControlValue", 50))
-            elif curve is not None:
-                target = self.curve_value(ctl_cfg.get("SelectedFanCurve"), now)
-                if target is not None and int(curve.get("CommandMode", 0) or 0) == 1:
-                    target = self.rpm_to_percent(ctl_cfg.get("Calibration"), target)
-            else:
-                target = None
-            if target is None:
-                # Ingen gyldig verdi: hold forrige, ellers la BIOS styre.
-                if state["out"] is None:
-                    if ctl.taken:
-                        ctl.release()
-                    continue
-                target = state["target"] if state["target"] is not None else state["out"]
-            state["target"] = target
-            out = self.shape(ctl_cfg, target, state["out"])
-            state["out"] = out
-            self._apply(ctl, out, bool(ctl_cfg.get("ForceApply")))
+            ident = ctl_cfg.get("Identifier") if isinstance(ctl_cfg, dict) else None
+            if not isinstance(ident, str):
+                ident = None
+            # Én kontroll med ugyldige verdier skal aldri stoppe reguleringen av de andre.
+            try:
+                self._tick_control(ctl_cfg, now)
+                if self._control_errors.pop(ident, None) is not None:
+                    self.control_state.get(ident, {}).pop("error", None)
+                    log.warning("%s: styres igjen", ident)
+            except Exception as ex:
+                self._control_failed(ident, ex)
         # Kurver som ikke brukes av noen kontroll vises likevel i GUI-et.
         for c in self.cfg.curves:
-            self.curve_value({"Name": c.get("Name")}, now)
+            try:
+                self.curve_value({"Name": c.get("Name")}, now)
+            except Exception as ex:
+                log.debug("kurve: %s", ex)
         return now
+
+    def _control_failed(self, ident, ex):
+        """En kontroll som ikke lar seg regulere gis tilbake til BIOS/driveren (100 % i nødmodus)
+        i stedet for å bli stående på den siste verdien."""
+        text = f"{type(ex).__name__}: {ex}"
+        if self._control_errors.get(ident) != text:
+            self._control_errors[ident] = text
+            log.error("%s: kan ikke reguleres (%s) – gir viften tilbake til BIOS/driver", ident, text)
+        if ident is None:
+            return
+        state = self.control_state.setdefault(ident, {"out": None, "target": None})
+        state["error"] = text
+        ctl = self.resolve(ident)
+        if ctl is None or ctl.kind != hw.CONTROL:
+            return
+        if self.failsafe_active and not self.paused and ctl.taken:
+            self._apply(ctl, 100.0, True)
+            state["out"] = state["target"] = 100.0
+            return
+        if ctl.taken:
+            ctl.release()
+        state["out"] = state["target"] = None
+
+    def _tick_control(self, ctl_cfg, now):
+        ident = ctl_cfg.get("Identifier")
+        ctl = self.resolve(ident)
+        state = self.control_state.setdefault(ident, {"out": None, "target": None})
+        paired = (ctl_cfg.get("PairedFanSensor") or ctl_cfg.get("MatchingFanSensor") or {}).get("Identifier")
+        ps = self.resolve(paired) if paired else None
+        state["rpm"] = ps.value if ps else None
+        state["found"] = ctl is not None
+        if ctl is None:
+            return
+        state["read"] = ctl.value
+        pump = self.pumps.get(ctl.id)
+        state["pump"] = pump["mode"] if pump else None
+        state["no_fan"] = self.no_fan(ctl, state, ps or self.by_id.get(ctl.id.replace("/control/", "/fan/")), now)
+        if pump:
+            # Ingen kurver, kalibrering eller paring på en pumpe – bare BIOS eller fast hastighet.
+            state["lost"] = None
+            if pump["mode"] == "fixed" and not self.paused:
+                v = 100.0 if self.failsafe_active else max(self.PUMP_MIN, float(pump.get("speed", 100)))
+                self._apply(ctl, v, True)
+                state["out"] = state["target"] = v
+            else:
+                if ctl.taken:
+                    ctl.release()
+                state["out"] = state["target"] = None
+            return
+        if self.failsafe_active and not self.paused and (ctl.id in self.override or ctl_cfg.get("Enable")):
+            self._apply(ctl, 100.0, True)
+            state["out"] = state["target"] = 100.0
+            return
+        if ctl.id in self.override:
+            self._apply(ctl, self.override[ctl.id], True)
+            state["out"] = state["target"] = self.override[ctl.id]
+            return
+        if not ctl_cfg.get("Enable") or self.paused:
+            if ctl.taken:
+                ctl.release()
+            state["out"] = state["target"] = state["lost"] = None
+            self._lost_since.pop(ident, None)
+            return
+
+        curve = self.cfg.resolve_curve(ctl_cfg.get("SelectedFanCurve"))
+        lost = [] if ctl_cfg.get("ManualControl") or curve is None else \
+            self.curve_lost(ctl_cfg.get("SelectedFanCurve"))
+        if lost:
+            since = self._lost_since.setdefault(ident, now)
+        else:
+            self._lost_since.pop(ident, None)
+            if state.get("lost"):
+                log.warning("%s: sensoren svarer igjen, vanlig styring", ident)
+        # Bare vifter Vifte allerede styrte; en sensor som aldri har virket lar BIOS styre.
+        if lost and self.sensor_lost_enabled and state["out"] is not None \
+                and now - since >= self.SENSOR_LOST_AFTER:
+            if not state.get("lost"):
+                log.warning("%s: sensor borte (%s), setter %.0f %%", ident, ", ".join(lost),
+                            self.sensor_lost_speed)
+            state["lost"] = sorted(set(lost))
+            self._apply(ctl, self.sensor_lost_speed, True)
+            state["out"] = state["target"] = self.sensor_lost_speed
+            return
+        state["lost"] = None
+        if ctl_cfg.get("ManualControl"):
+            target = float(ctl_cfg.get("ManualControlValue", 50))
+        elif curve is not None:
+            target = self.curve_value(ctl_cfg.get("SelectedFanCurve"), now)
+            if target is not None and int(curve.get("CommandMode", 0) or 0) == 1:
+                target = self.rpm_to_percent(ctl_cfg.get("Calibration"), target)
+        else:
+            target = None
+        if target is None:
+            # Ingen gyldig verdi: hold forrige, ellers la BIOS styre.
+            if state["out"] is None:
+                if ctl.taken:
+                    ctl.release()
+                return
+            target = state["target"] if state["target"] is not None else state["out"]
+        state["target"] = target
+        out = self.shape(ctl_cfg, target, state["out"])
+        state["out"] = out
+        self._apply(ctl, out, bool(ctl_cfg.get("ForceApply")))
 
     FAILSAFE_HYSTERESIS = 7.0
     SENSOR_LOST_AFTER = 5.0   # sekunder uten verdi før sensoren regnes som borte

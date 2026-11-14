@@ -356,6 +356,12 @@ EN = {
     "en annen jobb kjører allerede": "another job is already running",
     "kontrollen må være paret med en hastighetssensor først": "the control must be paired with a speed sensor first",
     "kan ikke slette aktiv konfigurasjon": "cannot delete the active configuration",
+    "viften ga ikke turtall under kalibreringen – sjekk at den er paret med riktig hastighetssensor":
+        "the fan gave no speed reading during calibration – check that it is paired with the right speed sensor",
+    "konfigurasjonen ble byttet under kalibreringen":
+        "the configuration was replaced during calibration",
+    "konfigurasjonen er endret et annet sted – prøv igjen":
+        "the configuration was changed elsewhere – try again",
     "ingen tilgang: brukeren er ikke med i gruppen vifte (kjør install.sh på nytt)":
         "access denied: the user is not in the vifte group (run install.sh again)",
     # --- kommandolinje
