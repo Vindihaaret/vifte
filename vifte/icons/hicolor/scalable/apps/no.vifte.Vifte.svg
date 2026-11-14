@@ -1,13 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#3a7bd5"/><stop offset="1" stop-color="#1c4f9c"/></linearGradient></defs>
-  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#g)"/>
-  <circle cx="64" cy="64" r="44" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="4"/>
-  <g fill="#fff">
-    <path id="b" d="M64 58c-4-14-2-30 10-34 10-3 16 8 10 18-4 7-12 11-20 16z"/>
-    <use href="#b" transform="rotate(90 64 64)"/>
-    <use href="#b" transform="rotate(180 64 64)"/>
-    <use href="#b" transform="rotate(270 64 64)"/>
-  </g>
-  <circle cx="64" cy="64" r="9" fill="#fff"/><circle cx="64" cy="64" r="4" fill="#1c4f9c"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3f4c"/><stop offset="1" stop-color="#16171c"/></linearGradient>
+    <linearGradient id="blade" gradientUnits="userSpaceOnUse" x1="0" y1="22" x2="0" y2="106"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c3c8d2"/></linearGradient>
+    <linearGradient id="air" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fe3ff"/><stop offset="1" stop-color="#3b82f6"/></linearGradient>
+    <path id="b" d="M64 64C52 53 49 33 63 25c14-8 29 3 26 17-2 11-13 17-25 22z"/>
+    <g id="blades">
+      <use href="#b"/>
+      <use href="#b" transform="rotate(120 64 64)"/>
+      <use href="#b" transform="rotate(240 64 64)"/>
+    </g>
+    <mask id="fan"><use href="#blades" fill="#fff"/></mask>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg)"/>
+  <rect x="9" y="9" width="110" height="110" rx="27" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="2"/>
+  <!-- moving air -->
+  <path d="M18.6 76.2A47 47 0 0 1 37 25.5" fill="none" stroke="url(#air)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M109.4 51.8A47 47 0 0 1 91 102.5" fill="none" stroke="url(#air)" stroke-width="5" stroke-linecap="round"/>
+  <!-- fan -->
+  <use href="#blades" fill="#000" opacity=".35" transform="translate(0 3)"/>
+  <rect x="16" y="16" width="96" height="96" fill="url(#blade)" mask="url(#fan)"/>
+  <!-- hub -->
+  <circle cx="64" cy="64" r="14" fill="#101116"/>
+  <circle cx="64" cy="64" r="7" fill="none" stroke="url(#air)" stroke-width="3.5"/>
 </svg>
