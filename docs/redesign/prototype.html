@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vifte – prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+:root { --cpu:#7AA2D2; --gpu:#D29A6C; --cpu-b:#34506E; --gpu-b:#9A6236; --fan:#7AA2D2; --fan-b:#34506E; --neutral:#DCDEE3; --idle:rgba(220,222,227,0.38); --acc:#F0A400; --acctext:#F5B83D; --calm:#2EC27E; --warm:#E5A50A; --hot:#E66100; --emerg:#E01B24; }
+body[data-theme="dark"] {
+  --bg: radial-gradient(75% 65% at 88% -12%, rgba(96,128,190,0.20) 0%, transparent 70%), radial-gradient(55% 45% at 0% 100%, rgba(70,90,130,0.12) 0%, transparent 70%), linear-gradient(165deg, #141821 0%, #0D1016 55%, #090B10 100%);
+  --side: rgba(255,255,255,0.075); --card: rgba(255,255,255,0.055); --solid:#161A22; --popover:#1E222B; --text:#F5F5F7; --sub:#B4B8C2;
+  --fill: rgba(255,255,255,0.08); --track: rgba(255,255,255,0.10); --line: rgba(255,255,255,0.09); --off:#4A4D55; --sel: rgba(240,164,0,0.20);
+  --shadow: inset 0 1px 0 rgba(255,255,255,0.09), inset 0 0 0 1px rgba(255,255,255,0.06), 0 12px 32px rgba(0,0,0,0.35);
+  --glow: 26; color-scheme: dark;
+}
+body[data-theme="light"] {
+  --cpu:#2F5A8A; --gpu:#9A5B26; --cpu-b:#34506E; --gpu-b:#9A6236; --fan:#2F5A8A; --fan-b:#34506E; --neutral:#2E3138; --idle:rgba(46,49,56,0.32);  --acc:#C47F00; --acctext:#8F5D00;
+  --bg: radial-gradient(75% 65% at 88% -12%, rgba(120,150,205,0.22) 0%, transparent 70%), linear-gradient(165deg, #F2F4F8 0%, #E8EBF0 100%);
+  --side: rgba(255,255,255,0.62); --card: rgba(255,255,255,0.66); --solid:#FFFFFF; --popover:#FFFFFF; --text:#1D1D1F; --sub:#55585E;
+  --fill: rgba(0,0,0,0.055); --track: rgba(0,0,0,0.08); --line: rgba(0,0,0,0.08); --off:#C9CBD0; --sel: rgba(196,127,0,0.16);
+  --shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 0 0 1px rgba(255,255,255,0.55), 0 10px 28px rgba(30,40,60,0.10);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; background: #0B0D12; color: var(--text); font-size: 14px; }
+body[data-theme="light"] { background: #E8EBF0; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.tnum { font-feature-settings: "tnum"; }
+.app { position: fixed; inset: 0; display: flex; background: var(--bg); overflow: hidden; }
+
+/* sidebar */
+nav.side { width: 232px; flex-shrink: 0; background: var(--side); border-right: 0.5px solid var(--line); display: flex; flex-direction: column; padding: 14px 10px 12px; }
+.brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 16px; }
+.logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(150deg, #F0A400, #B35A00); box-shadow: 0 4px 12px rgba(196,127,0,0.35); display: flex; align-items: center; justify-content: center; color: #fff; }
+.brand b { font-size: 16px; letter-spacing: -0.2px; display: block; }
+.brand small { font-size: 11.5px; color: var(--sub); }
+.label { padding: 0 8px 5px; font-size: 11px; font-weight: 600; color: var(--sub); }
+.navitem { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; border: none; background: transparent; width: 100%; text-align: left; font-size: 13.5px; font-weight: 500; color: var(--text); }
+.navitem svg { color: var(--sub); }
+.navitem:hover { background: var(--fill); }
+.navitem.on { background: var(--sel); font-weight: 600; }
+.navitem.on svg { color: var(--acctext); }
+.navitem:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.status { margin: 0 2px 10px; padding: 10px 12px; border-radius: 12px; background: var(--fill); display: flex; align-items: center; gap: 10px; border: none; text-align: left; width: calc(100% - 4px); }
+.status .dot { width: 26px; height: 26px; border-radius: 99px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; }
+.status b { font-size: 12.5px; display: block; }
+.status small { font-size: 11.5px; color: var(--sub); }
+
+/* main */
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+header.top { height: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 28px; }
+header.top h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.6px; }
+header.top .subt { font-size: 13px; color: var(--sub); }
+.grow { flex: 1; min-width: 0; }
+.iconbtn { width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; color: var(--sub); display: flex; align-items: center; justify-content: center; }
+.iconbtn:hover { background: var(--fill); color: var(--text); }
+.btn { height: 32px; padding: 0 14px; border: none; border-radius: 9px; background: var(--fill); font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { filter: brightness(1.15); }
+.btn.primary { background: var(--acc); color: #1D1D1F; }
+.close { width: 26px; height: 26px; border-radius: 99px; border: none; background: var(--fill); display: flex; align-items: center; justify-content: center; margin-left: 6px; }
+.content { flex: 1; overflow: auto; padding: 2px 28px 28px; display: flex; flex-direction: column; gap: 16px; }
+.content.split { flex-direction: row; padding: 2px 0 0; gap: 0; overflow: hidden; }
+
+/* cards */
+.card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.tile { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; background-color: var(--card); }
+.tile .hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 600; }
+.tile .hd span:first-child { display: flex; align-items: center; gap: 9px; }
+.badge { width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
+.big { white-space: nowrap; font-size: 30px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.1; font-feature-settings: "tnum"; }
+.big small { font-size: 16px; font-weight: 600; color: var(--sub); letter-spacing: 0; }
+.foot { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--fill); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.chip i { width: 6px; height: 6px; border-radius: 99px; display: block; }
+.row2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; }
+section.card { padding: 14px 18px; }
+.sechd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sechd h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.sechd h2 span { font-weight: 500; color: var(--sub); }
+.link { border: none; background: none; color: var(--acctext); font-weight: 600; font-size: 12.5px; display: inline-flex; align-items: center; gap: 2px; padding: 4px; }
+.legend { display: flex; gap: 16px; font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; display: block; }
+
+/* lists */
+.group-title { display: flex; align-items: center; gap: 9px; padding: 0 4px 9px; margin: 0; font-size: 14px; font-weight: 700; }
+.group-title .badge { width: 22px; height: 22px; }
+.inset { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.lrow { min-height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 16px; }
+.lrow + .lrow { border-top: 0.5px solid var(--line); }
+.ficon { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.name { font-size: 14px; font-weight: 600; display: block; }
+.sub { font-size: 12px; color: var(--sub); }
+.pct { width: 54px; text-align: right; font-size: 17px; font-weight: 700; font-feature-settings: "tnum"; }
+.bar { width: 96px; height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; flex-shrink: 0; }
+.bar i { display: block; height: 6px; border-radius: 99px; transition: width .6s ease; }
+select.pop { height: 28px; border: none; border-radius: 8px; background: var(--fill); padding: 0 26px 0 10px; font-size: 13px; font-weight: 500; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M8 9l4-4 4 4M8 15l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; max-width: 220px; }
+select.pop option { background: var(--popover); color: var(--text); }
+.switch { width: 40px; height: 24px; border: none; border-radius: 99px; padding: 2px; background: var(--off); display: flex; flex-shrink: 0; transition: background .2s; }
+.switch i { width: 20px; height: 20px; border-radius: 99px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform .2s; display: block; }
+.switch[aria-checked="true"] { background: var(--acc); }
+.switch[aria-checked="true"] i { transform: translateX(16px); }
+.step { display: inline-flex; align-items: center; height: 30px; border-radius: 8px; background: var(--fill); overflow: hidden; }
+.step button { width: 30px; height: 30px; border: none; background: transparent; font-size: 16px; font-weight: 600; color: var(--sub); }
+.step button:hover { background: var(--fill); color: var(--text); }
+.step span { min-width: 50px; text-align: center; font-weight: 600; font-size: 13px; font-feature-settings: "tnum"; }
+.srow { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 0; }
+.srow + .srow { border-top: 0.5px solid var(--line); }
+.srow .t { flex: 1; min-width: 0; }
+.srow .t b { font-size: 13.5px; font-weight: 600; display: block; }
+.prefs .lrow { min-height: 52px; }
+.prefs .lrow .t { flex: 1; min-width: 0; padding: 8px 0; }
+.prefs .lrow .t b { font-size: 14px; font-weight: 500; display: block; }
+.grip { color: var(--sub); opacity: .55; display: flex; cursor: grab; }
+
+/* curves */
+.clist { width: 290px; flex-shrink: 0; border-right: 0.5px solid var(--line); padding: 4px 10px 16px; display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+.search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin-bottom: 8px; border-radius: 9px; background: var(--fill); color: var(--sub); }
+.search input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; }
+.citem { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; border: none; background: transparent; text-align: left; width: 100%; }
+.citem:hover { background: var(--fill); }
+.citem.on { background: var(--sel); }
+.cdetail { flex: 1; min-width: 0; padding: 4px 28px 28px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
+.seg { display: inline-flex; padding: 2px; border-radius: 10px; background: var(--fill); flex-wrap: wrap; }
+.seg button { border: none; border-radius: 8px; height: 28px; padding: 0 12px; background: transparent; font-size: 12.5px; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--solid); box-shadow: 0 1px 3px rgba(0,0,0,0.25); font-weight: 600; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+.kv .lrow > span:first-child, .cdetail .lrow > span.grow { white-space: nowrap; }
+.kv .lrow { gap: 12px; }
+.kv select.pop { max-width: 200px; }
+.kv .inset { padding: 0 14px; }
+.kv .lrow { padding: 0; min-height: 46px; }
+#graph { touch-action: none; user-select: none; display: block; width: 100%; height: auto; }
+#graph .pt { cursor: grab; }
+.pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.pills .pp { font-size: 13px; padding: 3px 10px 3px 6px; border-radius: 99px; background: var(--fill); font-feature-settings: "tnum"; display: inline-flex; align-items: center; gap: 2px; box-shadow: inset 0 0 0 1px transparent; }
+.pills .pp.sel { box-shadow: inset 0 0 0 1.5px var(--acc); }
+.pills input { width: 3.1em; height: 24px; border: none; border-radius: 6px; background: transparent; text-align: right; font-weight: 600; font-size: 13px; padding: 0 3px; font-feature-settings: "tnum"; -moz-appearance: textfield; }
+.pills input::-webkit-outer-spin-button, .pills input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pills input:hover { background: var(--fill); }
+.pills input:focus { background: var(--solid); outline: 2px solid var(--acc); outline-offset: 0; }
+.pills .u { color: var(--sub); }
+.pills .ar { color: var(--sub); margin: 0 4px; }
+
+/* settings */
+.snav { width: 232px; }
+.hero { display: flex; align-items: center; gap: 16px; padding: 16px 18px; }
+.hero .ico { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
+.foottext { margin: 8px 4px 0; font-size: 12px; color: var(--sub); line-height: 1.45; }
+code { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 12px; background: var(--fill); padding: 2px 6px; border-radius: 6px; }
+
+/* popovers, dialog, toast */
+.popover { position: absolute; z-index: 30; min-width: 250px; padding: 6px; border-radius: 12px; background: var(--popover); box-shadow: 0 0 0 0.5px var(--line), 0 16px 40px rgba(0,0,0,0.35); }
+.popover button { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 10px; border: none; background: transparent; border-radius: 7px; font-size: 13px; text-align: left; }
+.popover button:hover { background: var(--fill); }
+.popover hr { border: none; border-top: 0.5px solid var(--line); margin: 5px 4px; }
+.popover .ph { padding: 6px 10px 4px; font-size: 12px; font-weight: 700; color: var(--sub); }
+.scrim { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; }
+.dialog { width: 440px; max-width: calc(100% - 32px); background: var(--popover); border-radius: 18px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 14px; }
+.dialog h3 { margin: 0; font-size: 17px; text-align: center; }
+.dialog input[type=text] { height: 36px; border-radius: 9px; border: none; background: var(--fill); padding: 0 12px; width: 100%; }
+.toast { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 50; background: #2B2E36; color: #fff; padding: 10px 16px; border-radius: 99px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+.banner { margin: 0 28px 8px; padding: 10px 14px; border-radius: 12px; background: var(--emerg); color: #fff; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.mockbar { position: absolute; right: 16px; bottom: 16px; z-index: 35; display: flex; gap: 6px; padding: 6px; border-radius: 12px; background: rgba(30,32,40,0.85); box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+.mockbar button { height: 30px; padding: 0 12px; border: none; border-radius: 8px; background: rgba(255,255,255,0.10); color: #fff; font-size: 12px; font-weight: 600; }
+.mockbar button.on { background: #F0A400; color: #1D1D1F; }
+.mockbar span { color: #B4B8C2; font-size: 11px; font-weight: 700; align-self: center; padding: 0 6px; }
+
+@media (max-width: 980px) {
+  .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row2, .kv { grid-template-columns: 1fr; }
+  .clist { width: 220px; }
+}
+@media (max-width: 760px) {
+  nav.side { width: 64px; padding: 12px 8px; }
+  nav.side .brand div, nav.side .label, nav.side .navitem span, nav.side .status span, nav.side #cfgwrap { display: none; }
+  .content { padding: 2px 14px 24px; }
+  header.top { padding: 0 10px 0 14px; }
+  .bar, .lrow .sp { display: none; }
+  .content.split { flex-direction: column; overflow: auto; }
+  .clist { width: auto; border-right: none; }
+}
+</style>
+</head>
+<body data-theme="dark">
+<div class="app" id="app"></div>
+<script>
+"use strict";
+// ---------- icons ----------
+const P = {
+ home:'<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-5h4v5"/>',
+ fan:'<circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c-.6-3 .2-6.4 3-6.4 2.4 0 2.6 3.2-.4 5.2"/><path d="M13.6 12c3-.6 6.4.2 6.4 3 0 2.4-3.2 2.6-5.2-.4"/><path d="M12 13.6c.6 3-.2 6.4-3 6.4-2.4 0-2.6-3.2.4-5.2"/><path d="M10.4 12c-3 .6-6.4-.2-6.4-3 0-2.4 3.2-2.6 5.2.4"/>',
+ curve:'<path d="M3 20h18"/><path d="M3 20V4"/><path d="M5 16c4 0 5-1 7-4s3-6 8-7"/>',
+ gauge:'<path d="M4.5 17a8.5 8.5 0 1 1 15 0"/><path d="M12 13l4-4"/><circle cx="12" cy="13" r="1"/>',
+ thermo:'<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v7"/>',
+ gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/>',
+ shield:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+ spark:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+ general:'<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
+ more:'<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
+ pause:'<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>',
+ play:'<path d="M8 5l11 7-11 7z"/>',
+ plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',
+ close:'<path d="M7 7l10 10"/><path d="M17 7L7 17"/>',
+ search:'<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+ chev:'<path d="M9 6l6 6-6 6"/>', back:'<path d="M15 6l-6 6 6 6"/>',
+ check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>', warn:'<path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+ chip:'<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
+ gpu:'<rect x="2.5" y="6" width="19" height="11" rx="2"/><circle cx="9" cy="11.5" r="3"/><path d="M15 9.5h3.5M15 13.5h3.5M5 17v3"/>',
+ grip:'<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+ copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'
+};
+const ic = (n, s = 16, sw = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (v, d = 1) => v == null ? "–" : v.toFixed(d).replace(".", ",");
+
+// ---------- state ----------
+const N = 120; // punkter i grafen (30 min)
+const mkHist = (base, amp, ph) => Array.from({length: N}, (_, i) => base + amp * Math.sin(i / 9 + ph) + amp * .4 * Math.sin(i / 3.1 + ph * 2));
+const S = {
+  theme: "dark", page: "overview", setPage: "general", dirty: false, paused: false, load: false,
+  config: "Claude", configs: ["Claude", "Stille", "Spill"],
+  settings: { failsafe: true, failsafeTemp: 95, lost: true, lostSpeed: 80, alerts: true, alertSensor: "cpu", alertTemp: 85,
+              showOverview: true, tint: false, trayTemps: true, autostart: true, claude: false, lang: "Norsk" },
+  temps: { cpu: 41.9, gpu: 54.0 }, hist: { cpu: mkHist(42, 2, 0), gpu: mkHist(53, 1.6, 1.3) },
+  sensors: [
+    { id: "cpu", group: "AMD CPU", name: "Core (Tctl/Tdie)", hue: "cpu", off: 0 },
+    { id: "ccd1", group: "AMD CPU", name: "CCD1 (Tdie)", hue: "cpu", off: -4 },
+    { id: "ccdmax", group: "AMD CPU", name: "CCDs Max (Tdie)", hue: "cpu", off: -3.8 },
+    { id: "ccdavg", group: "AMD CPU", name: "CCDs Average (Tdie)", hue: "cpu", off: -4.1 },
+    { id: "gpu", group: "NVIDIA GeForce RTX 4080 SUPER", name: "GPU", hue: "gpu", off: 0 },
+    { id: "mix", group: "Egne sensorer", name: "Maks (CPU, GPU)", hue: "acc", custom: true },
+  ],
+  curves: [
+    { name: "CPU", type: "Graf", src: "cpu", pts: [[50,22],[65,30],[75,50],[82,75],[88,95],[92,100]], up: 2, down: 4, resp: 2 },
+    { name: "GPU", type: "Graf", src: "gpu", pts: [[40,30],[60,40],[75,70],[85,100]], up: 2, down: 4, resp: 2 },
+    { name: "Kasse (CPU+GPU)", type: "Miks", fn: "Maks", of: ["CPU", "GPU"] },
+    { name: "Pumpe", type: "Flat", value: 70 },
+    { name: "Turbo-knapp", type: "Trigger", src: "cpu", idleT: 50, idleP: 25, loadT: 75, loadP: 80 },
+  ],
+  selCurve: 0,
+  fans: [
+    { id: "aio", group: "Motherboard (NCT6799)", name: "AIO-radiator", curve: "CPU", on: true, k: 18.5 },
+    { id: "rear", group: "Motherboard (NCT6799)", name: "Kasse bak", curve: "Kasse (CPU+GPU)", on: true, k: 16.6 },
+    { id: "top", group: "Motherboard (NCT6799)", name: "Kasse oppe", curve: "Kasse (CPU+GPU)", on: true, k: 15.7 },
+    { id: "pump", group: "Motherboard (NCT6799)", name: "AIO Pumpe", curve: "", on: false, k: 0, bios: 43, pump: true },
+    { id: "g1", group: "NVIDIA GeForce RTX 4080 SUPER", name: "Control 1", curve: "", on: false, k: 0, bios: 0, gpu: true },
+    { id: "g2", group: "NVIDIA GeForce RTX 4080 SUPER", name: "Control 2", curve: "", on: false, k: 0, bios: 0, gpu: true },
+  ],
+  out: {}, rpmHist: {},
+};
+S.fans.forEach(f => S.rpmHist[f.id] = Array(40).fill(0));
+try { const t = localStorage.getItem("vifte-proto-theme"); if (t) S.theme = t; } catch (e) {}
+
+// ---------- logic ----------
+function srcTemp(src) { const s = S.sensors.find(x => x.id === src) || { off: 0, id: src }; const base = s.hue === "gpu" ? S.temps.gpu : S.temps.cpu; return s.id === "mix" ? Math.max(S.temps.cpu, S.temps.gpu) : base + (s.off || 0); }
+function interp(pts, t) {
+  if (!pts.length) return 0;
+  if (t <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) if (t <= pts[i][0]) { const [a, b] = [pts[i - 1], pts[i]]; return a[1] + (b[1] - a[1]) * (t - a[0]) / (b[0] - a[0]); }
+  return pts[pts.length - 1][1];
+}
+function evalCurve(name, depth = 0) {
+  const c = S.curves.find(x => x.name === name); if (!c || depth > 4) return null;
+  switch (c.type) {
+    case "Graf": return interp(c.pts, srcTemp(c.src));
+    case "Lineær": { const t = srcTemp(c.src); return interp([[c.minT ?? 40, c.minP ?? 20], [c.maxT ?? 85, c.maxP ?? 100]], t); }
+    case "Flat": return c.value;
+    case "Miks": { const v = (c.of || []).map(n => evalCurve(n, depth + 1)).filter(x => x != null); if (!v.length) return 0;
+      return c.fn === "Min" ? Math.min(...v) : c.fn === "Snitt" ? v.reduce((a, b) => a + b, 0) / v.length : Math.max(...v); }
+    case "Trigger": { const t = srcTemp(c.src); if (t >= c.loadT) c.state = c.loadP; else if (t <= c.idleT || c.state == null) c.state = c.idleP; return c.state; }
+    case "Synk": return Math.min(100, Math.max(0, (evalCurve(c.of?.[0] || "CPU", depth + 1) || 0) + (c.offset || 0)));
+    default: return interp(S.curves[0].pts, S.temps.cpu);
+  }
+}
+const emergencyActive = () => S.settings.failsafe && Math.max(S.temps.cpu, S.temps.gpu) >= S.settings.failsafeTemp;
+function computeOut() {
+  const em = emergencyActive();
+  S.fans.forEach(f => {
+    let pct;
+    if (S.paused || !f.on || !f.curve) pct = f.bios ?? (S.out[f.id] ?? 30);
+    else pct = em ? 100 : evalCurve(f.curve) ?? 0;
+    pct = Math.round(pct);
+    S.out[f.id] = pct;
+    const rpm = f.k ? Math.round(pct * f.k + Math.random() * 6) : 0;
+    f.rpm = rpm; S.rpmHist[f.id].push(rpm); S.rpmHist[f.id].shift();
+  });
+}
+function heat(t) { return t == null ? "calm" : (emergencyActive() ? "emergency" : t < 60 ? "calm" : t < 80 ? "warm" : "hot"); }
+const HEAT_WORD = { calm: "Rolig", warm: "Varm", hot: "Het", emergency: "Nødmodus" };
+const HEAT_VAR = { calm: "var(--calm)", warm: "var(--warm)", hot: "var(--hot)", emergency: "var(--emerg)" };
+function safety() {
+  if (emergencyActive()) return ["emergency", "Nødmodus", "Alle styrte vifter går på 100 %"];
+  if (S.paused) return ["paused", "Styring på pause", "BIOS styrer viftene"];
+  if (!S.settings.failsafe) return ["off", "Nødmodus av", "Kan slås på i innstillingene"];
+  return ["ok", "Alt i orden", `Nødmodus ved ${S.settings.failsafeTemp} °C`];
+}
+function controlledCount() { return S.fans.filter(f => f.on && f.curve && !f.pump).length; }
+function fanAvg() { const v = S.fans.filter(f => f.on && f.curve && !f.pump).map(f => S.out[f.id]); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
+
+function tick() {
+  const tgt = S.load ? { cpu: 84, gpu: 76 } : { cpu: 42, gpu: 54 };
+  for (const k of ["cpu", "gpu"]) {
+    S.temps[k] += (tgt[k] - S.temps[k]) * 0.12 + (Math.random() - .5) * 0.8;
+    S.hist[k].push(S.temps[k]); S.hist[k].shift();
+  }
+  computeOut();
+  live();
+}
+
+// ---------- svg helpers ----------
+function smooth(vals, w, h, lo, hi) {
+  const pts = vals.map((v, i) => [i * w / (vals.length - 1), h - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * h]);
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], cx = (x0 + x1) / 2; d += ` C${cx.toFixed(1)} ${y0.toFixed(1)} ${cx.toFixed(1)} ${y1.toFixed(1)} ${x1.toFixed(1)} ${y1.toFixed(1)}`; }
+  return { d, last: pts[pts.length - 1] };
+}
+function sparkSVG(vals, color, w = 120, h = 44, id = "s") {
+  const lo = Math.min(...vals) - 1.5, hi = Math.max(...vals) + 1.5, { d, last } = smooth(vals, w, h, lo, hi);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" style="overflow:visible;flex-shrink:0"><defs><linearGradient id="g${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+  <path d="${d} L${w} ${h} L0 ${h} Z" fill="url(#g${id})"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5" fill="${color}" stroke="var(--solid)" stroke-width="2"/></svg>`;
+}
+function bigChart() {
+  const w = 860, h = 160, max = Math.max(...S.hist.cpu, ...S.hist.gpu), hi = max > 70 ? 100 : 70, lo = 30, step = hi > 70 ? 15 : 10;
+  const ticks = []; for (let v = lo; v <= hi; v += step) ticks.push(v);
+  let g = ticks.map(v => { const y = (h - (v - lo) / (hi - lo) * h).toFixed(1); return `<line x1="0" x2="${w}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="-10" y="${(+y + 4)}" text-anchor="end" font-size="11" fill="var(--sub)">${v} °C</text>`; }).join("");
+  g += [w / 3, 2 * w / 3].map(x => `<line y1="0" y2="${h}" x1="${x}" x2="${x}" stroke="var(--line)" stroke-dasharray="2 4"/>`).join("");
+  if (S.settings.failsafe && S.settings.failsafeTemp <= hi) { const y = (h - (S.settings.failsafeTemp - lo) / (hi - lo) * h).toFixed(1); g += `<line x1="0" x2="${w}" y1="${y}" y2="${y}" stroke="var(--emerg)" stroke-dasharray="5 5" opacity=".7"/><text x="${w - 4}" y="${y - 6}" text-anchor="end" font-size="11" fill="var(--emerg)">Nødmodus ${S.settings.failsafeTemp} °C</text>`; }
+  for (const [k, c] of [["gpu", "var(--gpu)"], ["cpu", "var(--cpu)"]]) {
+    const { d, last } = smooth(S.hist[k], w, h, lo, hi);
+    g += `<path d="${d} L${w} ${h} L0 ${h} Z" fill="url(#ch${k})"/><path d="${d}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/><circle cx="${last[0]}" cy="${last[1].toFixed(1)}" r="4.5" fill="${c}" stroke="var(--solid)" stroke-width="2.5"/>`;
+  }
+  const xl = ["−30 min", "−20 min", "−10 min", "Nå"].map((t, i) => `<text x="${i * w / 3}" y="${h + 20}" text-anchor="${i === 0 ? "start" : i === 3 ? "end" : "middle"}" font-size="11" fill="var(--sub)">${t}</text>`).join("");
+  return `<svg viewBox="-48 -8 ${w + 56} ${h + 34}" style="width:100%;height:auto;display:block" role="img" aria-label="CPU- og GPU-temperatur siste 30 minutter">
+  <defs>${["cpu", "gpu"].map(k => `<linearGradient id="ch${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--${k})" stop-opacity=".25"/><stop offset="1" stop-color="var(--${k})" stop-opacity="0"/></linearGradient>`).join("")}</defs>${g}${xl}</svg>`;
+}
+
+// ---------- components ----------
+const badge = (hue, icon, s = 24) => `<span class="badge" style="width:${s}px;height:${s}px;background:var(--${hue}-b, var(--${hue}))">${ic(icon, Math.round(s * .6), 2)}</span>`;
+const sw = (key, on, label) => `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(label)}" data-sw="${key}"><i></i></button>`;
+const chip = h => `<span class="chip"><i style="background:${HEAT_VAR[h]}"></i>${HEAT_WORD[h]}</span>`;
+const glow = hue => `background-image:linear-gradient(160deg, color-mix(in srgb, var(--${hue}) ${S.theme === "dark" ? 16 : 9}%, transparent) 0%, transparent 55%)`;
+const curveOptions = sel => `<option value="" ${!sel ? "selected" : ""}>(ingen kurve)</option>` + S.curves.map(c => `<option ${c.name === sel ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+const fanHue = f => f.gpu ? "gpu" : "fan";
+
+function header(title, sub, extra = "") {
+  return `<header class="top"><div class="grow"><h1>${title}</h1><div class="subt">${sub}</div></div>${extra}
+  <button class="iconbtn" data-act="pause" aria-label="${S.paused ? "Gjenoppta styring" : "Pause styring (BIOS overtar)"}" title="${S.paused ? "Gjenoppta styring" : "Pause styring (BIOS overtar)"}">${ic(S.paused ? "play" : "pause", 17)}</button>
+  <button class="iconbtn" data-act="menu" aria-label="Meny" aria-haspopup="menu">${ic("more", 18)}</button>
+  <button class="btn ${S.dirty ? "primary" : ""}" data-act="save">Lagre</button>
+  <button class="close" aria-label="Lukk" data-act="toast" data-msg="Lukk – Vifte fortsetter i bakgrunnen">${ic("close", 12, 2.4)}</button></header>`;
+}
+function sidebar() {
+  const items = [["overview", "Oversikt", "home"], ["controls", "Kontroller", "fan"], ["curves", "Kurver", "curve"], ["speeds", "Hastigheter", "gauge"], ["sensors", "Sensorer", "thermo"]];
+  const [st, t1, t2] = safety();
+  const col = st === "ok" ? "var(--calm)" : st === "emergency" ? "var(--emerg)" : "var(--warm)";
+  return `<nav class="side" aria-label="Seksjoner">
+  <div class="brand"><span class="logo">${ic("fan", 21, 1.9)}</span><div><b>Vifte</b><small>FanControl for Linux</small></div></div>
+  <div class="label">Konfigurasjon</div>
+  <div id="cfgwrap" style="padding:0 2px 14px"><button class="btn" style="width:100%;justify-content:space-between" data-act="configs" aria-haspopup="menu"><span>${esc(S.config)}${S.dirty ? " •" : ""}</span>${ic("chev", 13, 2.2)}</button></div>
+  ${items.map(([k, t, i]) => `<button class="navitem ${S.page === k ? "on" : ""}" data-nav="${k}" aria-current="${S.page === k ? "page" : "false"}">${ic(i, 17)}<span>${t}</span></button>`).join("")}
+  <div class="grow"></div>
+  <button class="status" data-nav="settings" data-setpage="safety"><span class="dot" style="background:${col}">${ic(st === "ok" ? "check" : "warn", 15, 2.6)}</span><span><b>${t1}</b><small>${S.paused ? "BIOS styrer viftene" : `Tjenesten styrer ${controlledCount()} vifter`}</small></span></button>
+  <button class="navitem ${S.page === "settings" ? "on" : ""}" data-nav="settings">${ic("gear", 17)}<span>Innstillinger</span></button></nav>`;
+}
+
+// ---------- pages ----------
+function pageOverview() {
+  const avg = fanAvg(), [st, t1, t2] = safety();
+  const sc = st === "ok" ? "calm" : st === "emergency" ? "emergency" : "warm";
+  const tile = (hue, icon, label, k, foot) => `<div class="card tile"><div class="hd"><span>${badge(hue, icon)}${label}</span><span data-live="chip-${k}">${chip(heat(S.temps[k]))}</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="big" data-live="t-${k}">${fmt(S.temps[k])}<small> °C</small></div><span data-live="sp-${k}">${sparkSVG(S.hist[k].slice(-30), `var(--${hue})`, 84, 36, k)}</span></div><div class="foot" style="margin-top:-6px">${foot}</div></div>`;
+  return header("Oversikt", "Temperaturer og vifter akkurat nå") + banner() + `<div class="content">
+  <div class="grid4">${tile("cpu", "chip", "CPU", "cpu", "AMD CPU · Core (Tctl/Tdie)")}${tile("gpu", "gpu", "GPU", "gpu", "RTX 4080 SUPER")}
+   <div class="card tile"><div class="hd"><span>${badge("fan", "fan")}Vifter</span></div><div><div class="big" data-live="fanavg">${avg == null ? "–" : Math.round(avg)}<small> %</small></div><div class="foot">${controlledCount()} styrt · Pumper: 1</div></div></div>
+   <div class="card tile" data-live="safetytile"><div class="hd"><span>${`<span class="badge" style="background:${HEAT_VAR[sc]}">${ic("shield", 14, 2)}</span>`}Sikkerhet</span></div><div><div style="font-size:20px;font-weight:700;letter-spacing:-.3px;line-height:1.5">${t1}</div><div class="foot">${t2}</div></div></div></div>
+  <section class="card" style="padding:16px 20px 12px"><div class="sechd"><h2>Temperatur <span>· siste 30 minutter</span></h2><div class="legend"><span><i style="background:var(--cpu)"></i>CPU</span><span><i style="background:var(--gpu)"></i>GPU</span></div></div><div data-live="bigchart">${bigChart()}</div></section>
+  <div class="row2"><section class="card"><div class="sechd"><h2>Vifter</h2><button class="link" data-nav="controls">Kontroller${ic("chev", 13, 2.2)}</button></div><div data-live="fanlist">${fanMini()}</div></section>
+  <section class="card"><div class="sechd"><h2>Beskyttelse</h2><button class="link" data-nav="settings" data-setpage="safety">Innstillinger${ic("chev", 13, 2.2)}</button></div>
+   <div class="srow"><div class="t"><b>Nødmodus</b><span class="sub">Alle styrte vifter på 100 % ved ${S.settings.failsafeTemp} °C</span></div>${sw("failsafe", S.settings.failsafe, "Nødmodus")}</div>
+   <div class="srow"><div class="t"><b>Sikring ved sensortap</b><span class="sub">${S.settings.lostSpeed} % hvis en kurves sensor forsvinner</span></div>${sw("lost", S.settings.lost, "Sikring ved sensortap")}</div>
+   <div class="srow"><div class="t"><b>Styring</b><span class="sub">${S.paused ? "BIOS styrer viftene" : "Vifte styrer viftene"}</span></div><button class="btn" data-act="pause">${ic(S.paused ? "play" : "pause", 13)}${S.paused ? "Fortsett" : "Pause"}</button></div></section></div></div>`;
+}
+function fanMini() {
+  return S.fans.filter(f => !f.gpu).map(f => { const act = f.on && f.curve && !S.paused, hue = act ? "var(--neutral)" : "var(--idle)";
+    return `<div style="display:flex;align-items:center;gap:12px;height:40px"><span class="ficon" style="width:28px;height:28px;background:color-mix(in srgb, ${hue} 14%, transparent);color:${hue}">${ic("fan", 16)}</span>
+    <span class="grow" style="font-weight:600;font-size:13.5px">${esc(f.name)}</span><span class="sub tnum" style="width:84px;text-align:right">${act ? f.rpm + " RPM" : "BIOS styrer"}</span>
+    <span class="bar" style="width:100px"><i style="width:${S.out[f.id]}%;background:${hue}"></i></span><span class="tnum" style="width:42px;text-align:right;font-weight:700">${S.out[f.id]} %</span></div>`; }).join("");
+}
+function banner() {
+  if (!emergencyActive()) return "";
+  return `<div class="banner">${ic("warn", 18, 2.2)} Nødmodus: temperaturen er over ${S.settings.failsafeTemp} °C – alle styrte vifter går på 100 %</div>`;
+}
+function groups(list) { const m = new Map(); list.forEach(x => { if (!m.has(x.group)) m.set(x.group, []); m.get(x.group).push(x); }); return [...m]; }
+const groupBadge = g => g.startsWith("NVIDIA") ? badge("gpu", "gpu", 22) : g.startsWith("AMD") ? badge("cpu", "chip", 22) : g.startsWith("Egne") ? badge("acc", "spark", 22) : badge("fan", "chip", 22);
+function pageControls() {
+  return header("Kontroller", `${S.fans.length} vifter · ${controlledCount()} styrt av Vifte`) + banner() + `<div class="content">` + groups(S.fans).map(([g, fans]) => `<section><h2 class="group-title"><span class="grip" title="Dra for å flytte gruppen">${ic("grip", 14)}</span>${groupBadge(g)}${esc(g)}</h2><div class="inset">` +
+    fans.map(f => { const act = f.on && f.curve && !S.paused, hue = act ? "var(--neutral)" : "var(--idle)";
+      return `<div class="lrow"><span class="ficon" style="background:color-mix(in srgb, ${hue} 14%, transparent);color:${hue}">${ic("fan", 18)}</span>
+      <div class="grow"><span class="name">${esc(f.name)}</span><span class="sub tnum" data-live="rpm-${f.id}">${act ? f.rpm + " RPM" : f.k ? "BIOS styrer" : "0 RPM"}</span></div>
+      <select class="pop" data-fan="${f.id}" aria-label="Kurve for ${esc(f.name)}">${curveOptions(f.curve)}</select>
+      <span class="pct" data-live="pct-${f.id}">${S.out[f.id]} %</span><span class="bar"><i data-live="bar-${f.id}" style="width:${S.out[f.id]}%;background:${hue}"></i></span>
+      ${sw("fan:" + f.id, f.on, "Styr " + f.name)}<button class="iconbtn" data-act="fandlg" data-id="${f.id}" aria-label="Innstillinger for ${esc(f.name)}">${ic("gear", 16)}</button></div>`; }).join("") + `</div></section>`).join("") + `</div>`;
+}
+function curveMini(c, on) {
+  let pts = c.type === "Graf" ? c.pts : c.type === "Flat" ? [[20, c.value], [120, c.value]] : c.type === "Trigger" ? [[20, c.idleP], [c.loadT, c.idleP], [c.loadT, c.loadP], [120, c.loadP]] : [[20, 25], [60, 30], [85, 90], [120, 100]];
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${((p[0] - 20) / 100 * 56).toFixed(1)} ${(28 - p[1] / 100 * 26).toFixed(1)}`).join(" ");
+  return `<svg width="56" height="30" viewBox="0 0 56 30" aria-hidden="true"><path d="${d}" fill="none" stroke="${on ? "var(--acc)" : "var(--sub)"}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+function curveDesc(c) {
+  const src = n => (S.sensors.find(s => s.id === n) || {}).name || n;
+  return { Graf: `Graf · ${src(c.src)}`, Lineær: `Lineær · ${src(c.src)}`, Flat: `Flat · ${c.value} %`, Miks: `Miks · ${(c.fn || "Maks").toLowerCase()} av ${(c.of || []).length}`,
+    Trigger: `Trigger · ${c.loadT} °C`, Synk: `Synk · ${(c.of || ["CPU"])[0]}`, Auto: "Auto" }[c.type] || c.type;
+}
+function pageCurves() {
+  const c = S.curves[S.selCurve], used = S.fans.filter(f => f.curve === c.name).map(f => f.name);
+  const v = evalCurve(c.name);
+  const list = S.curves.map((x, i) => `<button class="citem ${i === S.selCurve ? "on" : ""}" data-curve="${i}"><span class="grow" style="min-width:0"><span class="name" style="font-size:13.5px">${esc(x.name)}</span><span class="sub" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curveDesc(x))}</span></span>${curveMini(x, i === S.selCurve)}<span class="tnum" style="width:40px;text-align:right;font-weight:600;font-size:13px" data-live="cv-${i}">${Math.round(evalCurve(x.name) ?? 0)} %</span></button>`).join("");
+  const types = ["Graf", "Lineær", "Flat", "Miks", "Trigger", "Synk", "Auto"];
+  const srcSel = `<select class="pop" data-cfield="src" aria-label="Temperaturkilde">${S.sensors.map(s => `<option value="${s.id}" ${c.src === s.id ? "selected" : ""}>${esc(s.group.replace("NVIDIA GeForce ", ""))} · ${esc(s.name)}</option>`).join("")}</select>`;
+  const stepper = (field, val, unit, d = 1) => `<span class="step"><button data-cstep="${field}" data-d="-${d}" aria-label="Mindre">−</button><span>${val}${unit}</span><button data-cstep="${field}" data-d="${d}" aria-label="Mer">+</button></span>`;
+  const row = (k, v) => `<div class="lrow"><span class="grow">${k}</span>${v}</div>`;
+  let body = "";
+  if (c.type === "Graf") body = `<div class="kv"><div class="inset">${row("Temperaturkilde", srcSel)}${row("Utdata", `<select class="pop" aria-label="Utdata"><option>Prosent (%)</option></select>`)}</div>
+    <div class="inset">${row("Hysterese opp / ned", `<span style="display:flex;gap:6px">${stepper("up", c.up, " °C")}${stepper("down", c.down, " °C")}</span>`)}${row("Responstid", stepper("resp", c.resp, " s"))}</div></div>
+    <section class="card" style="padding:16px 20px 14px"><div class="sechd"><h2>Kurve</h2><span class="sub">Klikk for å legge til · dra for å flytte · høyreklikk fjerner</span></div><div id="graphwrap">${graphSVG(c)}</div>
+    <div class="pills" style="margin-top:12px">${pillsHTML(c)}</div>
+    <div class="lrow" style="padding:0;min-height:44px;margin-top:10px;border-top:0.5px solid var(--line)"><span class="grow sub" style="font-size:13px">Skriv inn verdier i punktene, eller dra dem i grafen</span><span class="sub" style="font-size:13px">Temperaturakse</span>${stepper("xmin", c.xmin ?? 20, " °C", 5)}<span class="sub">–</span>${stepper("xmax", c.xmax ?? 120, " °C", 5)}</div></section>`;
+  else if (c.type === "Lineær") body = `<div class="inset" style="padding:0 14px">${row("Temperaturkilde", srcSel)}${row("Fra", `<span style="display:flex;gap:6px">${stepper("minT", c.minT ?? 40, " °C")}${stepper("minP", c.minP ?? 20, " %", 5)}</span>`)}${row("Til", `<span style="display:flex;gap:6px">${stepper("maxT", c.maxT ?? 85, " °C")}${stepper("maxP", c.maxP ?? 100, " %", 5)}</span>`)}</div>`;
+  else if (c.type === "Flat") body = `<div class="inset" style="padding:0 14px">${row("Fast hastighet", `<span style="display:flex;align-items:center;gap:12px"><input type="range" min="0" max="100" value="${c.value ?? 50}" data-crange="value" aria-label="Fast hastighet" style="width:220px;accent-color:var(--acc)"><b class="tnum">${c.value ?? 50} %</b></span>`)}</div>`;
+  else if (c.type === "Miks") body = `<div class="inset" style="padding:0 14px">${row("Funksjon", `<select class="pop" data-cfield="fn" aria-label="Funksjon">${["Maks", "Min", "Snitt"].map(f => `<option ${c.fn === f ? "selected" : ""}>${f}</option>`).join("")}</select>`)}
+    ${S.curves.filter(x => x.name !== c.name).map(x => row(esc(x.name), sw("mix:" + x.name, (c.of || []).includes(x.name), "Ta med " + x.name))).join("")}</div>`;
+  else if (c.type === "Trigger") body = `<div class="inset" style="padding:0 14px">${row("Temperaturkilde", srcSel)}${row("Hvile", `<span style="display:flex;gap:6px">${stepper("idleT", c.idleT ?? 50, " °C")}${stepper("idleP", c.idleP ?? 25, " %", 5)}</span>`)}${row("Last", `<span style="display:flex;gap:6px">${stepper("loadT", c.loadT ?? 75, " °C")}${stepper("loadP", c.loadP ?? 80, " %", 5)}</span>`)}</div>`;
+  else if (c.type === "Synk") body = `<div class="inset" style="padding:0 14px">${row("Følger kurve", `<select class="pop" data-cfield="syncof" aria-label="Følger kurve">${S.curves.filter(x => x.name !== c.name).map(x => `<option ${(c.of || [])[0] === x.name ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`)}${row("Forskyvning", stepper("offset", c.offset ?? 0, " %", 5))}</div>`;
+  else body = `<div class="inset" style="padding:14px 16px"><span class="sub">Auto lar Vifte finne en kurve ut fra temperaturkilden. Ingen innstillinger her.</span></div>`;
+  return header("Kurver", `${S.curves.length} kurver · ${new Set(S.fans.filter(f => f.curve).map(f => f.curve)).size} i bruk`, `<button class="btn" data-act="newcurve">${ic("plus", 14, 2.4)}Ny kurve</button>`) + banner() +
+  `<div class="content split"><div class="clist"><label class="search">${ic("search", 14)}<input type="search" placeholder="Søk i kurver" aria-label="Søk i kurver" data-act="csearch"></label>${list}</div>
+  <div class="cdetail"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap"><div><div style="font-size:22px;font-weight:700;letter-spacing:-.3px;display:flex;align-items:center;gap:6px">${esc(c.name)}<button class="iconbtn" data-act="rename" aria-label="Gi nytt navn" style="width:28px;height:28px">${ic("general", 14)}</button></div>
+  <div class="sub tnum" data-live="cnow">${c.src ? `Nå: ${fmt(srcTemp(c.src))} °C ` : ""}<span style="color:var(--acctext)">→ ${Math.round(v ?? 0)} %</span>${used.length ? " · brukes av " + esc(used.join(", ")) : " · ikke i bruk"}</div></div>
+  <div class="seg" role="group" aria-label="Kurvetype">${types.map(t => `<button aria-pressed="${c.type === t}" data-ctype="${t}">${t}</button>`).join("")}</div></div>${body}</div></div>`;
+}
+function pillsHTML(c) {
+  return c.pts.map((p, i) => `<span class="pp ${i === S.selPt ? "sel" : ""}"><input type="number" inputmode="numeric" step="1" value="${p[0]}" data-pi="${i}" data-pk="0" aria-label="Punkt ${i + 1}, temperatur i °C"><span class="u">°C</span><span class="ar">→</span><input type="number" inputmode="numeric" step="1" min="0" max="100" value="${p[1]}" data-pi="${i}" data-pk="1" aria-label="Punkt ${i + 1}, viftehastighet i %"><span class="u">%</span></span>`).join("");
+}
+function setPoint(i, k, v, final) {
+  const c = S.curves[S.selCurve]; if (!c.pts[i] || isNaN(v)) return;
+  if (k === 1) v = Math.max(0, Math.min(100, Math.round(v)));
+  else { v = Math.round(v); const lo = i > 0 ? c.pts[i - 1][0] + 1 : -50, hi = i < c.pts.length - 1 ? c.pts[i + 1][0] - 1 : 250; if (final) v = Math.max(lo, Math.min(hi, v)); else if (v < lo || v > hi) return; }
+  c.pts[i][k] = v; S.selPt = i; dirty();
+}
+const GW = 640, GH = 260;
+let XR = [20, 120];
+const gx = t => (t - XR[0]) / (XR[1] - XR[0]) * GW, gy = p => GH - p / 100 * GH;
+function graphSVG(c) {
+  XR = [c.xmin ?? 20, c.xmax ?? 120];
+  let g = "";
+  for (let p = 0; p <= 100; p += 20) g += `<line x1="0" x2="${GW}" y1="${gy(p)}" y2="${gy(p)}" stroke="var(--line)"/><text x="-8" y="${gy(p) + 4}" text-anchor="end" font-size="11" fill="var(--sub)">${p} %</text>`;
+  const span = XR[1] - XR[0], tstep = span > 120 ? 40 : span > 60 ? 20 : 10;
+  for (let t = Math.ceil(XR[0] / tstep) * tstep; t <= XR[1]; t += tstep) g += `<line y1="0" y2="${GH}" x1="${gx(t)}" x2="${gx(t)}" stroke="var(--line)"/><text x="${gx(t)}" y="${GH + 18}" text-anchor="middle" font-size="11" fill="var(--sub)">${t} °C</text>`;
+  const pts = c.pts, d = `M0 ${gy(pts[0][1])} ` + pts.map(p => `L${gx(p[0])} ${gy(p[1])}`).join(" ") + ` L${GW} ${gy(pts[pts.length - 1][1])}`;
+  const now = srcTemp(c.src);
+  return `<svg id="graph" viewBox="-44 -10 ${GW + 70} ${GH + 32}" role="img" aria-label="Viftekurve, prosent mot temperatur">
+  <defs><linearGradient id="gf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--acc)" stop-opacity=".32"/><stop offset="1" stop-color="var(--acc)" stop-opacity="0"/></linearGradient></defs>
+  <rect id="ghit" x="0" y="0" width="${GW}" height="${GH}" fill="transparent"/>${g}<path d="${d} L${GW} ${GH} L0 ${GH} Z" fill="url(#gf)" pointer-events="none"/><path d="${d}" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linejoin="round" pointer-events="none"/>
+  <g id="gnow" pointer-events="none"><line x1="${gx(now)}" x2="${gx(now)}" y1="0" y2="${GH}" stroke="var(--sub)" stroke-dasharray="3 4"/><circle cx="${gx(now)}" cy="${gy(interp(pts, now))}" r="5" fill="var(--acc)"/></g>
+  ${pts.map((p, i) => `<circle class="pt" data-i="${i}" cx="${gx(p[0])}" cy="${gy(p[1])}" r="${i === S.selPt ? 8 : 7}" fill="${i === S.selPt ? "var(--acc)" : "var(--solid)"}" stroke="var(--acc)" stroke-width="2.5"/>`).join("")}</svg>`;
+}
+function pageSpeeds() {
+  return header("Hastigheter", "Turtall fra alle viftesensorer") + `<div class="content">` + groups(S.fans).map(([g, fans]) => `<section><h2 class="group-title"><span class="grip">${ic("grip", 14)}</span>${groupBadge(g)}${esc(g)}</h2><div class="inset">` +
+    fans.map(f => `<div class="lrow"><span class="grow name" style="font-weight:500">${esc(f.name)}</span><span class="sp" data-live="rs-${f.id}">${sparkSVG(S.rpmHist[f.id], `var(--${fanHue(f)})`, 150, 28, "r" + f.id)}</span><span class="pct" style="width:110px" data-live="rv-${f.id}">${f.rpm} RPM</span><button class="iconbtn" aria-label="Detaljer" data-act="toast" data-msg="Sensordetaljer: navn, skjul kort">${ic("chev", 15)}</button></div>`).join("") + `</div></section>`).join("") + `</div>`;
+}
+function sensorVal(s) { return s.id === "mix" ? Math.max(S.temps.cpu, S.temps.gpu) : (s.hue === "gpu" ? S.temps.gpu : S.temps.cpu) + (s.off || 0); }
+function sensorHist(s) { const b = s.hue === "gpu" ? S.hist.gpu : S.hist.cpu; return s.id === "mix" ? S.hist.cpu.map((v, i) => Math.max(v, S.hist.gpu[i])).slice(-40) : b.slice(-40).map(v => v + (s.off || 0)); }
+function pageSensors() {
+  const order = [...S.sensors].sort((a, b) => (b.custom ? 1 : 0) - (a.custom ? 1 : 0));
+  return header("Sensorer", "Historikk for siste 30 minutter", `<button class="btn" data-act="toast" data-msg="Legg til egen sensor: Miks, Avvik, Fil …">${ic("plus", 14, 2.4)}Egen sensor</button>`) + `<div class="content">` + groups(order).map(([g, ss]) => `<section><h2 class="group-title"><span class="grip">${ic("grip", 14)}</span>${groupBadge(g)}${esc(g)}</h2><div class="inset">` +
+    ss.map(s => { const v = sensorVal(s), h = heat(v); return `<div class="lrow"><span class="grow" style="display:flex;align-items:center;gap:8px;font-weight:500">${esc(s.name)}<span data-live="sc-${s.id}">${h !== "calm" ? chip(h) : ""}</span></span><span class="sp" data-live="ss-${s.id}">${sparkSVG(sensorHist(s), `var(--${s.hue})`, 150, 28, "x" + s.id)}</span><span class="pct" style="width:84px" data-live="sv-${s.id}">${fmt(v)} °C</span><button class="iconbtn" aria-label="Detaljer for ${esc(s.name)}" data-act="toast" data-msg="Sensordetaljer: navn, skjul kort">${ic("chev", 15)}</button></div>`; }).join("") + `</div></section>`).join("") + `</div>`;
+}
+function pageSettings() {
+  const cats = [["general", "Generelt", "general"], ["safety", "Sikkerhet", "shield"], ["claude", "Claude", "spark"]];
+  const side = `<nav class="side snav" aria-label="Innstillinger"><button class="link" data-nav="${S.prev || "overview"}" style="margin:2px 4px 12px;font-size:13px">${ic("back", 14, 2.4)}Tilbake til Vifte</button>
+   ${cats.map(([k, t, i]) => `<button class="navitem ${S.setPage === k ? "on" : ""}" data-setpage="${k}"><span class="badge" style="background:${S.setPage === k ? "var(--acc)" : "var(--fill)"};color:${S.setPage === k ? "#1D1D1F" : "var(--sub)"}">${ic(i, 14, 2)}</span><span>${t}</span></button>`).join("")}</nav>`;
+  const s = S.settings, step = (k, v, u, d) => `<span class="step"><button data-sstep="${k}" data-d="-${d}" aria-label="Mindre">−</button><span>${v}${u}</span><button data-sstep="${k}" data-d="${d}" aria-label="Mer">+</button></span>`;
+  const row = (t, sub, ctrl) => `<div class="lrow"><div class="t"><b>${t}</b>${sub ? `<span class="sub">${sub}</span>` : ""}</div>${ctrl}</div>`;
+  const sec = (t, rows, foot) => `<section><h2 style="margin:0 4px 8px;font-size:13px;font-weight:600;color:var(--sub)">${t}</h2><div class="inset">${rows}</div>${foot ? `<p class="foottext">${foot}</p>` : ""}</section>`;
+  let body = "";
+  if (S.setPage === "general") body =
+    sec("Språk / Language", row("Språk", null, `<select class="pop" data-set="lang" aria-label="Språk">${["Norsk", "English", "Deutsch", "Français", "Español"].map(l => `<option ${s.lang === l ? "selected" : ""}>${l}</option>`).join("")}</select>`)) +
+    sec("Visning", row("Utseende", "Følger systemet i den ferdige appen", `<div class="seg" role="group" aria-label="Utseende"><button aria-pressed="${S.theme === "light"}" data-theme-set="light">Lys</button><button aria-pressed="${S.theme === "dark"}" data-theme-set="dark">Mørk</button></div>`) +
+      row("Vis oversiktsruter", "CPU, GPU, vifter og sikkerhet øverst på sidene", sw("set:showOverview", s.showOverview, "Vis oversiktsruter")) +
+      row("Fargetone etter temperatur", "Av som standard i dette designet", sw("set:tint", s.tint, "Fargetone etter temperatur"))) +
+    sec("Statusfelt", row("Vis temperaturer i statusfeltet", null, sw("set:trayTemps", s.trayTemps, "Vis temperaturer i statusfeltet"))) +
+    sec("Tjeneste", row("Start Vifte ved innlogging", null, sw("set:autostart", s.autostart, "Start ved innlogging")) + row("Avinstaller Vifte", "Fjerner tjenesten og gir viftene tilbake til BIOS", `<button class="btn" style="color:var(--emerg)" data-act="toast" data-msg="Avinstallering er ikke med i prototypen">Avinstaller …</button>`));
+  else if (S.setPage === "safety") { const ok = s.failsafe && s.lost;
+    body = `<div class="card hero"><span class="ico" style="background:${ok ? "var(--calm)" : "var(--warm)"}">${ic("shield", 26, 2)}</span><div><b style="font-size:15px">${ok ? "Beskyttelsen er aktiv" : "Beskyttelsen er delvis av"}</b><div class="sub" style="font-size:13px">${s.failsafe ? `Nødmodus ved ${s.failsafeTemp} °C` : "Nødmodus av"} · ${s.lost ? `${s.lostSpeed} % ved sensortap` : "Sikring ved sensortap er av"}</div></div></div>` +
+    sec("Viftevern", row("Nødmodus", "Når CPU eller GPU når nødtemperaturen, går alle styrte vifter på 100 %", sw("set:failsafe", s.failsafe, "Nødmodus")) + row("Nødtemperatur", null, step("failsafeTemp", s.failsafeTemp, " °C", 1)) +
+      row("Sikring ved sensortap", "Hvis sensoren til en kurve slutter å svare, går viftene på hastigheten under", sw("set:lost", s.lost, "Sikring ved sensortap")) + row("Hastighet ved sensortap", null, step("lostSpeed", s.lostSpeed, " %", 5))) +
+    sec("Varsler", row("Skrivebordsvarsler", null, sw("set:alerts", s.alerts, "Skrivebordsvarsler")) + row("Varsel 1", null, `<span style="display:flex;gap:8px"><select class="pop" aria-label="Sensor for varsel 1">${S.sensors.map(x => `<option>${esc(x.name)}</option>`).join("")}</select>${step("alertTemp", s.alertTemp, " °C", 1)}</span>`) +
+      `<div class="lrow"><button class="link" data-act="toast" data-msg="Nytt varsel lagt til">${ic("plus", 15, 2.4)} Legg til varsel</button></div>`, "Skrivebordsvarsel når en sensor har vært over grensen i 10 sekunder."); }
+  else body = sec("Claude", row("Gi Claude tilgang", "Claude kan lese sensorer og justere kurver – innenfor Viftes sikkerhetsgrenser", sw("set:claude", s.claude, "Gi Claude tilgang")) +
+      row("Koble til Claude Code", "<code>claude mcp add --scope user vifte -- vifte mcp</code>", `<button class="btn" data-act="copy">${ic("copy", 14)}Kopier</button>`) +
+      row("Promptforslag", "Eksempler på hva du kan be Claude om", `<button class="btn" data-act="toast" data-msg="Promptforslag åpnes i en dialog">Vis</button>`), s.claude ? "Mens Claude har tilgang er nødmodus og sikring ved sensortap alltid på." : "");
+  return side + `<main><header class="top"><div class="grow"><h1>${cats.find(c => c[0] === S.setPage)[1]}</h1></div><button class="close" aria-label="Lukk" data-nav="${S.prev || "overview"}">${ic("close", 12, 2.4)}</button></header><div class="content prefs" style="max-width:780px">${body}</div></main>`;
+}
+
+// ---------- render ----------
+const app = document.getElementById("app");
+function render() {
+  document.body.dataset.theme = S.theme;
+  const pages = { overview: pageOverview, controls: pageControls, curves: pageCurves, speeds: pageSpeeds, sensors: pageSensors };
+  const st = app.querySelector(".content")?.scrollTop || 0;
+  app.innerHTML = S.page === "settings" ? pageSettings() : sidebar() + `<main>${pages[S.page]()}</main>`;
+  app.insertAdjacentHTML("beforeend", `<div class="mockbar" role="group" aria-label="Prototypekontroller"><span>MOCKUP</span><button data-mock="theme">${S.theme === "dark" ? "Lys modus" : "Mørk modus"}</button><button data-mock="load" class="${S.load ? "on" : ""}">${S.load ? "Stopp last" : "Simuler last"}</button></div>`);
+  const c = app.querySelector(".content"); if (c) c.scrollTop = st;
+  if (S.page === "curves") bindGraph();
+}
+const set = (sel, html) => { const el = app.querySelector(`[data-live="${sel}"]`); if (el) el.innerHTML = html; };
+let lastEm = false;
+function live() {
+  if (dragging || ["SELECT", "INPUT"].includes(document.activeElement?.tagName)) return;
+  const em = emergencyActive();
+  if (em !== lastEm) { lastEm = em; render(); return; }
+  for (const k of ["cpu", "gpu"]) { set("t-" + k, `${fmt(S.temps[k])}<small> °C</small>`); set("chip-" + k, chip(heat(S.temps[k]))); set("sp-" + k, sparkSVG(S.hist[k].slice(-30), `var(--${k})`, 84, 36, k)); }
+  const avg = fanAvg(); set("fanavg", `${avg == null ? "–" : Math.round(avg)}<small> %</small>`);
+  set("bigchart", bigChart()); set("fanlist", fanMini());
+  S.fans.forEach(f => { const act = f.on && f.curve && !S.paused; set("rpm-" + f.id, act ? f.rpm + " RPM" : f.k ? "BIOS styrer" : "0 RPM"); set("pct-" + f.id, S.out[f.id] + " %");
+    const b = app.querySelector(`[data-live="bar-${f.id}"]`); if (b) b.style.width = S.out[f.id] + "%";
+    set("rs-" + f.id, sparkSVG(S.rpmHist[f.id], `var(--${fanHue(f)})`, 150, 28, "r" + f.id)); set("rv-" + f.id, f.rpm + " RPM"); });
+  S.sensors.forEach(s => { const v = sensorVal(s), h = heat(v); set("sv-" + s.id, fmt(v) + " °C"); set("sc-" + s.id, h !== "calm" ? chip(h) : ""); set("ss-" + s.id, sparkSVG(sensorHist(s), `var(--${s.hue})`, 150, 28, "x" + s.id)); });
+  S.curves.forEach((c, i) => set("cv-" + i, Math.round(evalCurve(c.name) ?? 0) + " %"));
+  if (S.page === "curves") { const c = S.curves[S.selCurve], used = S.fans.filter(f => f.curve === c.name).map(f => f.name);
+    set("cnow", `${c.src ? `Nå: ${fmt(srcTemp(c.src))} °C ` : ""}<span style="color:var(--acctext)">→ ${Math.round(evalCurve(c.name) ?? 0)} %</span>${used.length ? " · brukes av " + esc(used.join(", ")) : " · ikke i bruk"}`);
+    const gn = app.querySelector("#gnow"); if (gn && c.type === "Graf") { const now = srcTemp(c.src); gn.innerHTML = `<line x1="${gx(now)}" x2="${gx(now)}" y1="0" y2="${GH}" stroke="var(--sub)" stroke-dasharray="3 4"/><circle cx="${gx(now)}" cy="${gy(interp(c.pts, now))}" r="5" fill="var(--acc)"/>`; } }
+}
+let toastT;
+function toast(msg) { app.querySelector(".toast")?.remove(); app.insertAdjacentHTML("beforeend", `<div class="toast" role="status">${esc(msg)}</div>`); clearTimeout(toastT); toastT = setTimeout(() => app.querySelector(".toast")?.remove(), 2600); }
+const dirty = () => { S.dirty = true; };
+function closePop() { app.querySelectorAll(".popover,.scrim").forEach(e => e.remove()); }
+function popover(anchor, html) {
+  closePop(); const r = anchor.getBoundingClientRect();
+  app.insertAdjacentHTML("beforeend", `<div class="popover" role="menu">${html}</div>`);
+  const p = app.querySelector(".popover"), w = p.offsetWidth;
+  p.style.top = (r.bottom + 6) + "px"; p.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
+  p.querySelector("button")?.focus();
+}
+function dialog(html) { closePop(); app.insertAdjacentHTML("beforeend", `<div class="scrim"><div class="dialog" role="dialog" aria-modal="true">${html}</div></div>`); app.querySelector(".dialog input, .dialog button")?.focus(); }
+
+// ---------- events ----------
+app.addEventListener("click", e => {
+  const t = e.target.closest("button, [data-nav]"); if (!t) { if (!e.target.closest(".popover")) closePop(); return; }
+  if (t.closest(".scrim") && !t.closest(".dialog")) return;
+  const d = t.dataset;
+  if (d.nav) { if (d.nav === "settings" && S.page !== "settings") S.prev = S.page; S.page = d.nav; if (d.setpage) S.setPage = d.setpage; closePop(); render(); return; }
+  if (d.setpage) { S.setPage = d.setpage; render(); return; }
+  if (d.sw) { const on = t.getAttribute("aria-checked") !== "true"; t.setAttribute("aria-checked", on); const [kind, key] = d.sw.includes(":") ? d.sw.split(/:(.+)/) : ["set", d.sw];
+    if (kind === "fan") { const f = S.fans.find(x => x.id === key); f.on = on; if (on && !f.curve) { f.curve = f.gpu ? "GPU" : "CPU"; } dirty(); }
+    else if (kind === "mix") { const c = S.curves[S.selCurve]; c.of = c.of || []; on ? c.of.push(key) : c.of.splice(c.of.indexOf(key), 1); dirty(); }
+    else if (key.endsWith("flag")) { if (key === "pumpflag") S.fans.find(x => x.id === S.fanEdit).pump = on; return; }
+    else { S.settings[key] = on; if (key === "tint" && on) toast("Fargetone er slått av i dette designet – bryteren er bare for test"); }
+    computeOut(); setTimeout(render, 180); return; }
+  if (d.mock === "theme") { S.theme = S.theme === "dark" ? "light" : "dark"; try { localStorage.setItem("vifte-proto-theme", S.theme); } catch (er) {} render(); return; }
+  if (d.mock === "load") { S.load = !S.load; render(); toast(S.load ? "Simulerer last – temperaturen stiger" : "Lasten er av – temperaturen synker"); return; }
+  if (d.themeSet) { S.theme = d.themeSet; render(); return; }
+  if (d.curve) { S.selCurve = +d.curve; S.selPt = null; render(); return; }
+  if (d.ctype) { const c = S.curves[S.selCurve]; c.type = d.ctype;
+    if (c.type === "Graf" && !c.pts) c.pts = [[40, 25], [60, 40], [80, 80], [90, 100]];
+    if (!c.src && ["Graf", "Lineær", "Trigger"].includes(c.type)) c.src = "cpu"; if (c.type === "Flat" && c.value == null) c.value = 50;
+    if (c.type === "Trigger") Object.assign(c, { idleT: c.idleT ?? 50, idleP: c.idleP ?? 25, loadT: c.loadT ?? 75, loadP: c.loadP ?? 80 });
+    if (c.type === "Miks" && !c.of) Object.assign(c, { fn: "Maks", of: [] }); if (c.type === "Synk" && !c.of) c.of = [S.curves.find(x => x.name !== c.name).name];
+    dirty(); render(); return; }
+  if (d.cstep) { const c = S.curves[S.selCurve]; const lim = { up: [0, 20], down: [0, 20], resp: [0, 30], minT: [0, 120], maxT: [0, 120], idleT: [0, 120], loadT: [0, 120], minP: [0, 100], maxP: [0, 100], idleP: [0, 100], loadP: [0, 100], offset: [-50, 50], xmin: [-50, 200], xmax: [-50, 250] }[d.cstep];
+    const def = { minT: 40, maxT: 85, minP: 20, maxP: 100, offset: 0, xmin: 20, xmax: 120 }[d.cstep] ?? 0; let nv = Math.max(lim[0], Math.min(lim[1], (c[d.cstep] ?? def) + +d.d));
+    if (d.cstep === "xmin" && nv > (c.xmax ?? 120) - 20) return; if (d.cstep === "xmax" && nv < (c.xmin ?? 20) + 20) return;
+    c[d.cstep] = nv; dirty(); render(); return; }
+  if (d.sstep) { const lim = { failsafeTemp: [70, 105], lostSpeed: [30, 100], alertTemp: [30, 110] }[d.sstep]; S.settings[d.sstep] = Math.max(lim[0], Math.min(lim[1], S.settings[d.sstep] + +d.d)); render(); return; }
+  switch (d.act) {
+    case "save": S.dirty = false; render(); toast(`Lagret «${S.config}» – FanControl-formatet (userConfig.json)`); break;
+    case "pause": S.paused = !S.paused; computeOut(); render(); toast(S.paused ? "Styring på pause – BIOS overtar" : "Vifte styrer viftene igjen"); break;
+    case "toast": toast(d.msg); break;
+    case "copy": navigator.clipboard?.writeText("claude mcp add --scope user vifte -- vifte mcp").then(() => toast("Kopiert"), () => toast("Kunne ikke kopiere – merk teksten i stedet")); break;
+    case "configs": popover(t, `<div class="ph">Konfigurasjoner</div>${S.configs.map(c => `<button role="menuitem" data-cfg="${esc(c)}">${c === S.config ? ic("check", 15, 2.4) : `<span style="width:15px"></span>`}${esc(c)}</button>`).join("")}`); break;
+    case "menu": popover(t, ["Importer FanControl-konfigurasjon …", "Eksporter konfigurasjon …", "Ny tom konfigurasjon …", "Lagre som …", "Slett konfigurasjon …", "|", "Par vifter automatisk", "Koble manglende sensorer …", "Søk etter maskinvare på nytt", "|", "Åpne Stress", "|", "Vis skjulte kort", (S.paused ? "Fortsett styring" : "Pause styring (BIOS overtar)"), "Innstillinger …", "Se etter oppdateringer …", "Om Vifte", "|", "Avslutt"]
+      .map(x => x === "|" ? "<hr>" : `<button role="menuitem" data-menu="${esc(x)}">${esc(x)}</button>`).join("")); break;
+    case "newcurve": { let n = 1; while (S.curves.some(c => c.name === "Ny kurve " + n)) n++; S.curves.push({ name: "Ny kurve " + n, type: "Graf", src: "cpu", pts: [[40, 25], [60, 40], [80, 80], [90, 100]], up: 2, down: 4, resp: 2 }); S.selCurve = S.curves.length - 1; dirty(); render(); break; }
+    case "rename": { const c = S.curves[S.selCurve]; dialog(`<h3>Gi nytt navn</h3><input type="text" id="nm" value="${esc(c.name)}" aria-label="Navn"><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn" data-act="cancel">Avbryt</button><button class="btn primary" data-act="okname">Lagre</button></div>`); break; }
+    case "okname": { const c = S.curves[S.selCurve], v = app.querySelector("#nm").value.trim(); if (v) { S.fans.forEach(f => { if (f.curve === c.name) f.curve = v; }); S.curves.forEach(x => { if (x.of) x.of = x.of.map(n => n === c.name ? v : n); }); c.name = v; dirty(); } closePop(); render(); break; }
+    case "fandlg": { const f = S.fans.find(x => x.id === d.id); S.fanEdit = f.id; dialog(`<h3>${esc(f.name)}</h3><label class="sub" for="nm">Navn</label><input type="text" id="nm" value="${esc(f.name)}"><div class="srow"><div class="t"><b>Pumpe</b><span class="sub">Telles ikke med i snittet</span></div>${sw("pumpflag", !!f.pump, "Pumpe")}</div><div class="srow"><div class="t"><b>Skjul kort</b></div>${sw("hideflag", false, "Skjul kort")}</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn" data-act="cancel">Avbryt</button><button class="btn primary" data-act="okfan">Lagre</button></div>`); break; }
+    case "okfan": { const f = S.fans.find(x => x.id === S.fanEdit), v = app.querySelector("#nm").value.trim(); if (v) f.name = v; dirty(); closePop(); render(); break; }
+    case "cancel": closePop(); break;
+  }
+  if (d.cfg) { S.config = d.cfg; S.dirty = false; closePop(); render(); toast(`Byttet til «${d.cfg}»`); }
+  if (d.menu) { closePop(); if (d.menu.startsWith("Pause") || d.menu.startsWith("Fortsett")) { S.paused = !S.paused; render(); } else if (d.menu === "Innstillinger …") { S.prev = S.page; S.page = "settings"; render(); } else toast(d.menu.replace(" …", "") + " – ikke med i prototypen"); }
+});
+app.addEventListener("change", e => {
+  const t = e.target, d = t.dataset;
+  if (d.pi != null) { setPoint(+d.pi, +d.pk, parseFloat(t.value), true); redrawGraph(); const again = app.querySelector(`.pills input[data-pi="${S.selPt}"][data-pk="${d.pk}"]`); if (again && document.activeElement === document.body) again.focus(); return; }
+  if (d.fan) { const f = S.fans.find(x => x.id === d.fan); f.curve = t.value; f.on = !!t.value; dirty(); computeOut(); render(); }
+  else if (d.cfield === "src") { S.curves[S.selCurve].src = t.value; dirty(); render(); }
+  else if (d.cfield === "fn") { S.curves[S.selCurve].fn = t.value; dirty(); render(); }
+  else if (d.cfield === "syncof") { S.curves[S.selCurve].of = [t.value]; dirty(); render(); }
+  else if (d.set) { S.settings[d.set] = t.value; if (t.value !== "Norsk") toast("Språkbytte er ikke med i prototypen"); }
+  else if (d.crange) { S.curves[S.selCurve][d.crange] = +t.value; dirty(); render(); }
+});
+app.addEventListener("focusin", e => { const t = e.target; if (t.dataset && t.dataset.pi != null && S.selPt !== +t.dataset.pi) { S.selPt = +t.dataset.pi; redrawGraph(true); app.querySelectorAll(".pills .pp").forEach((el, j) => el.classList.toggle("sel", j === S.selPt)); } });
+app.addEventListener("keydown", e => { const t = e.target; if (t.dataset && t.dataset.pi != null && e.key === "Enter") { t.blur(); } });
+app.addEventListener("input", e => { const t = e.target;
+  if (t.dataset.pi != null) { setPoint(+t.dataset.pi, +t.dataset.pk, parseFloat(t.value), false); redrawGraph(true); app.querySelectorAll(".pills .pp").forEach((el, j) => el.classList.toggle("sel", j === S.selPt)); return; }
+  if (t.dataset.crange) { t.nextElementSibling.textContent = t.value + " %"; }
+  if (t.dataset.act === "csearch") { const q = t.value.toLowerCase(); app.querySelectorAll(".citem").forEach(b => b.style.display = b.textContent.toLowerCase().includes(q) ? "" : "none"); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closePop(); });
+window.addEventListener("resize", closePop);
+
+// ---------- graph editing ----------
+let dragging = null;
+function svgPoint(svg, ev) { const p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; const q = p.matrixTransform(svg.getScreenCTM().inverse()); return [Math.round(Math.max(XR[0], Math.min(XR[1], q.x / GW * (XR[1] - XR[0]) + XR[0]))), Math.round(Math.max(0, Math.min(100, (GH - q.y) / GH * 100)))]; }
+function redrawGraph(keepPills) { const c = S.curves[S.selCurve]; const w = app.querySelector("#graphwrap"); if (w) { w.innerHTML = graphSVG(c); bindGraph(); }
+  const pills = app.querySelector(".pills"); if (pills && !keepPills) pills.innerHTML = pillsHTML(c); }
+function bindGraph() {
+  const svg = app.querySelector("#graph"); if (!svg) return; const c = S.curves[S.selCurve];
+  svg.addEventListener("pointerdown", ev => {
+    if (ev.button !== 0) return; const [tx, py] = svgPoint(svg, ev); let i;
+    if (ev.target.classList.contains("pt")) i = +ev.target.dataset.i;
+    else { c.pts.push([tx, py]); c.pts.sort((a, b) => a[0] - b[0]); i = c.pts.findIndex(p => p[0] === tx && p[1] === py); dirty(); }
+    S.selPt = i; dragging = { i }; svg.setPointerCapture(ev.pointerId); redrawGraph();
+  });
+  svg.addEventListener("pointermove", ev => { if (!dragging) return; const [tx, py] = svgPoint(svg, ev), i = dragging.i;
+    const lo = i > 0 ? c.pts[i - 1][0] + 1 : 20, hi = i < c.pts.length - 1 ? c.pts[i + 1][0] - 1 : 120;
+    c.pts[i] = [Math.max(lo, Math.min(hi, tx)), py]; dirty(); redrawGraph(); });
+  const end = () => { if (dragging) { dragging = null; render(); } };
+  svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", end);
+  svg.addEventListener("contextmenu", ev => { ev.preventDefault(); if (ev.target.classList.contains("pt") && c.pts.length > 2) { c.pts.splice(+ev.target.dataset.i, 1); S.selPt = null; dirty(); redrawGraph(); } });
+}
+
+computeOut(); render(); setInterval(tick, 1000);
+</script>
+</body>
+</html>
