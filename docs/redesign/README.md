@@ -61,7 +61,8 @@ Prototypen er HTML/CSS, ikke GTK. Bruk den som fasit for **hva** det skal se ut 
     - **Lagring:** disker = temperatursensorer med id som begynner med `/nvme/` eller `/hdd/` (vis modellnavnet
       fra gruppetittelen, f.eks. «Samsung 990 PRO 2TB»). ⋯-menyen har tre valg: *Den varmeste disken*
       (standard; undertekst «varmest av N»), *Alle disker* (én linje per disk med navn, statusprikk og verdi)
-      og *én bestemt disk*. Lagres som `overview_disk_mode` (`hottest` / `all` / `pick`) og
+      og *én bestemt disk*. Undertekst og linjer bruker kort modellnavn uten produsent (f.eks. «980 PRO 1TB»),
+      kuttes med «…» om det ikke får plass, og hele navnet vises som verktøytips. Lagres som `overview_disk_mode` (`hottest` / `all` / `pick`) og
       `overview_disk_pick` (sensor-id).
     - Finnes ingen slik sensor, viser kortet «Ingen sensor funnet» og menyen lar deg velge en hvilken som helst
       temperatursensor.
@@ -168,6 +169,8 @@ innhold som dagens `Gio.Menu`), Lagre (aksentfarge når `dirty`), lukk.
 - Nederst to kort: «Vifter» (øverst snitt % for styrte vifter, så nøytral liste, lenke til Kontroller) og
   «Beskyttelse» (øverst sikkerhetsstatus med farget ikon, så brytere for nødmodus og sikring ved sensortap –
   samme innstillinger som i Innstillinger – og Pause/Fortsett, lenke til Innstillinger).
+  Oppsummeringsraden øverst i begge kortene (snitt % / sikkerhetsstatus) har lik fast høyde (54 px) med
+  skillelinje under, så linjene står på samme høyde. Sikkerhetsikonet er 24 px, som ikonflatene ellers.
 
 **Kontroller** – dagens kort blir grupperte lister (`Adw.PreferencesGroup`-lignende inset-lister) per maskinvare.
 Rad: nøytralt vifteikon, navn + RPM/«BIOS styrer», kurvevelger, prosent, stolpe, bryter, tannhjul

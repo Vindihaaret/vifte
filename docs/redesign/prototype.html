@@ -82,6 +82,7 @@ section.card { padding: 14px 18px; }
 .sechd h2 { margin: 0; font-size: 14px; font-weight: 700; }
 .sechd h2 span { font-weight: 500; color: var(--sub); }
 .link { border: none; background: none; color: var(--acctext); font-weight: 600; font-size: 12.5px; display: inline-flex; align-items: center; gap: 2px; padding: 4px; }
+.sumrow { height: 54px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; border-bottom: 0.5px solid var(--line); margin-bottom: 4px; }
 .legend { display: flex; gap: 16px; font-size: 12px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 14px; height: 3px; border-radius: 2px; display: block; }
@@ -391,12 +392,12 @@ function diskInner() {
   const list = shownDisks(), n = disks().length;
   if (list.length === 1) { const d = list[0], v = sensorVal(d);
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="big">${fmt(v)}<small> °C</small></div>${sparkSVG(sensorHist(d, 30), "var(--neutral)", 84, 36, "disk")}</div>
-    <div class="foot" style="margin-top:-6px">${esc(d.disk)}${S.diskMode === "hottest" && n > 1 ? ` · varmest av ${n}` : ""}</div>`; }
+    <div class="foot" style="margin-top:-6px" title="${esc(d.disk)}">${esc(d.disk.replace(/^Samsung /, ""))}${S.diskMode === "hottest" && n > 1 ? ` · varmest av ${n}` : ""}</div>`; }
   return `<div style="display:flex;flex-direction:column;gap:7px;margin-top:2px">${list.map(d => { const v = sensorVal(d); return `<div style="display:flex;align-items:center;gap:8px"><span class="grow" style="font-size:12.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.disk.replace("Samsung ", ""))}</span><span data-heat style="width:6px;height:6px;border-radius:99px;flex-shrink:0;background:${HEAT_VAR[heat(v)]}" aria-hidden="true"></span><b class="tnum" style="font-size:16px;width:64px;text-align:right">${fmt(v)} °C</b></div>`; }).join("")}</div>`;
 }
 function diskTile() {
   const hot = Math.max(...shownDisks().map(sensorVal));
-  return `<div class="card tile"><div class="hd"><span>${badge("neutral", "disk")}Lagring</span><span style="display:flex;align-items:center;gap:6px"><span data-live="chip-disk">${chip(heat(hot))}</span><button class="iconbtn" style="width:26px;height:26px" data-act="pickdisk" aria-label="Velg hvilke disker som vises" aria-haspopup="menu">${ic("more", 15)}</button></span></div><div data-live="diskinner">${diskInner()}</div></div>`;
+  return `<div class="card tile"><div class="hd"><span>${badge("neutral", "disk")}Lagring</span><span style="display:flex;align-items:center;gap:6px"><span data-live="chip-disk">${chip(heat(hot))}</span><button class="iconbtn" style="width:26px;height:26px" data-act="pickdisk" aria-label="Velg hvilke disker som vises" aria-haspopup="menu">${ic("more", 15)}</button></span></div><div data-live="diskinner" style="display:flex;flex-direction:column;gap:10px">${diskInner()}</div></div>`;
 }
 function pageOverview() {
   const avg = fanAvg(), [st, t1, t2] = safety();
@@ -407,10 +408,10 @@ function pageOverview() {
   <div class="grid4">${tile("cpu", "chip", "CPU", "cpu", "AMD CPU · Core (Tctl/Tdie)")}${tile("gpu", "gpu", "GPU", "gpu", "RTX 4080 SUPER")}${boardTile()}${diskTile()}</div>
   <section class="card" style="padding:16px 20px 12px"><div class="sechd"><h2>Temperatur <span>· siste 30 minutter</span></h2><div class="legend"><span><i style="background:var(--cpu)"></i>CPU</span><span><i style="background:var(--gpu)"></i>GPU</span></div></div><div data-live="bigchart">${bigChart()}</div></section>
   <div class="row2"><section class="card"><div class="sechd"><h2>Vifter</h2><button class="link" data-nav="controls">Kontroller${ic("chev", 13, 2.2)}</button></div>
-   <div style="display:flex;align-items:baseline;gap:10px;padding:2px 0 8px;border-bottom:0.5px solid var(--line);margin-bottom:4px"><span class="big" style="font-size:26px" data-live="fanavg">${avg == null ? "–" : Math.round(avg)}<small> %</small></span><span class="sub">snitt av styrte vifter · ${controlledCount()} styrt · Pumper: 1</span></div>
+   <div class="sumrow"><span class="big" style="font-size:26px" data-live="fanavg">${avg == null ? "–" : Math.round(avg)}<small> %</small></span><span class="sub">snitt av styrte vifter · ${controlledCount()} styrt · Pumper: 1</span></div>
    <div data-live="fanlist">${fanMini()}</div></section>
   <section class="card"><div class="sechd"><h2>Beskyttelse</h2><button class="link" data-nav="settings" data-setpage="safety">Innstillinger${ic("chev", 13, 2.2)}</button></div>
-   <div style="display:flex;align-items:center;gap:12px;padding:2px 0 10px;border-bottom:0.5px solid var(--line)"><span class="badge" style="width:34px;height:34px;border-radius:10px;background:${HEAT_VAR[sc]}">${ic(st === "ok" ? "shield" : "warn", 18, 2)}</span><div><div style="font-size:17px;font-weight:700;letter-spacing:-.2px">${t1}</div><div class="sub">${t2}</div></div></div>
+   <div class="sumrow"><span class="badge" style="background:${HEAT_VAR[sc]}">${ic(st === "ok" ? "shield" : "warn", 14, 2)}</span><div><div style="font-size:15px;font-weight:700;line-height:1.25">${t1}</div><div class="sub">${t2}</div></div></div>
    <div class="srow"><div class="t"><b>Nødmodus</b><span class="sub">Alle styrte vifter på 100 % ved ${S.settings.failsafeTemp} °C</span></div>${sw("failsafe", S.settings.failsafe, "Nødmodus")}</div>
    <div class="srow"><div class="t"><b>Sikring ved sensortap</b><span class="sub">${S.settings.lostSpeed} % hvis en kurves sensor forsvinner</span></div>${sw("lost", S.settings.lost, "Sikring ved sensortap")}</div>
    <div class="srow"><div class="t"><b>Styring</b><span class="sub">${S.paused ? "BIOS styrer viftene" : "Vifte styrer viftene"}</span></div><button class="btn" data-act="pause">${ic(S.paused ? "play" : "pause", 13)}${S.paused ? "Fortsett" : "Pause"}</button></div></section></div></div>`;
