@@ -56,6 +56,34 @@
 .vifte-status-icon.warm { background-color: @vifte_warm; }
 .vifte-status-icon.emergency { background-color: @vifte_emergency; }
 
+/* ---- Oversikt */
+.vifte-icon-surface { min-width: 24px; min-height: 24px; border-radius: 7px; color: white;
+  background-color: #4A505C; }
+.vifte-icon-surface.cpu { background-color: #34506E; }
+.vifte-icon-surface.gpu { background-color: #9A6236; }
+.vifte-glass .vifte-icon-surface.neutral { background-color: @vifte_neutral_surface; }
+.vifte-unit { font-size: 16px; font-weight: 600; }
+.vifte-glass .vifte-unit { color: @vifte_sub; }
+.vifte-temp-card { padding: 14px 16px; min-width: 0; }   /* fire på rad uten å tvinge vinduet bredere */
+.vifte-more > button { min-height: 24px; min-width: 24px; padding: 0; }
+.vifte-link { padding: 2px 6px; font-weight: 600; }
+.vifte-glass .vifte-link { color: @vifte_accent_text; }
+.vifte-legend { min-width: 14px; min-height: 3px; border-radius: 99px; background-color: @vifte_cpu; }
+.vifte-legend.gpu { background-color: @vifte_gpu; }
+.vifte-bottom-card { padding: 14px 18px 8px 18px; }
+.vifte-summary { min-height: 54px; margin-top: 4px; border-bottom: 1px solid alpha(currentColor, 0.1); }
+.vifte-summary-value { font-size: 26px; }
+.vifte-summary .vifte-status-icon { min-width: 24px; min-height: 24px; border-radius: 7px; }
+.vifte-overview-row { min-height: 48px; }
+.vifte-overview-rows > :not(:first-child) { border-top: 1px solid alpha(currentColor, 0.1); }
+.vifte-fan-row { min-height: 40px; }
+.vifte-glass .vifte-summary { border-bottom-color: @vifte_line; }
+.vifte-glass .vifte-overview-rows > :not(:first-child) { border-top-color: @vifte_line; }
+.vifte-fan-row .vifte-icon-surface { background-color: alpha(currentColor, 0.1); color: inherit; }
+.vifte-glass .vifte-fan-row .vifte-icon-surface { background-color: @vifte_fill; color: @vifte_neutral; }
+.vifte-fan-row.idle .vifte-icon-surface { opacity: 0.45; }
+.vifte-glass .vifte-fan-row.idle levelbar block.filled { background-color: @vifte_idle; }
+
 /* Kort: nøytrale, halvgjennomsiktige, tynn lys kant øverst. */
 .vifte-glass .vifte-card, .vifte-glass .vifte-tile {
   background-color: @vifte_card; border-radius: 16px;

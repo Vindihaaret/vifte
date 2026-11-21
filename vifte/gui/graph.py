@@ -230,11 +230,12 @@ class Sparkline(Gtk.DrawingArea):
     """Liten historikkgraf for et sensorkort. Hull (None) tegnes som brudd i linjen.
     color: identitetsfargen «cpu», «gpu» eller «neutral» (fargetokens vifte_* i look.py)."""
 
-    def __init__(self, min_span=5.0, height=36, color="neutral"):
+    def __init__(self, min_span=5.0, height=36, color="neutral", dot=False):
         super().__init__()
         self.values = []
         self.min_span = min_span
         self.color = color
+        self.dot = dot   # prikk på siste verdi (temperaturkortene på Oversikt)
         self.set_content_height(height)
         self.set_hexpand(True)
         self.set_draw_func(self._draw)
@@ -286,3 +287,119 @@ class Sparkline(Gtk.DrawingArea):
             cr.set_line_width(2)
             cr.set_line_join(cairo.LINE_JOIN_ROUND)
             cr.stroke()
+        if self.dot and self.values[-1] is not None:
+            _end_dot(cr, *xy(n - 1, self.values[-1]), accent, 3)
+
+
+def _end_dot(cr, x, y, color, r):
+    cr.arc(x, y, r, 0, 2 * math.pi)
+    cr.set_source_rgba(color.red, color.green, color.blue, 1)
+    cr.fill()
+
+
+class HistoryGraph(Gtk.DrawingArea):
+    """Stor temperaturgraf på Oversikt: flere linjer over de siste minuttene, stiplet nødlinje.
+    Verdiene er i °C; fmt_y lager aksetekstene (f.eks. i °F)."""
+
+    MINUTES = 30
+    PAD_L, PAD_R, PAD_T, PAD_B = 46, 10, 8, 26
+
+    def __init__(self, height=180):
+        super().__init__()
+        self.t = []
+        self.series = []          # [(fargetoken, verdier)]
+        self.limit = None         # nødtemperatur, eller None
+        self.fmt_y = lambda v: f"{v:.0f} °C"
+        self.x_labels = ["−30 min", "−20 min", "−10 min", "0"]
+        self.set_content_height(height)
+        self.set_hexpand(True)
+        self.set_draw_func(self._draw)
+
+    def set_data(self, t, series, limit=None):
+        self.t, self.series, self.limit = list(t), list(series), limit
+        self.queue_draw()
+
+    def _draw(self, area, cr, w, h):
+        fg = _color(self, "window_fg_color", (0.9, 0.9, 0.9, 1))
+        ax, ay = self.PAD_L, self.PAD_T
+        aw, ah = max(1, w - self.PAD_L - self.PAD_R), max(1, h - self.PAD_T - self.PAD_B)
+        cr.select_font_face("Sans")
+        cr.set_font_size(11)
+        end = self.t[-1] if self.t else 0
+        start = end - self.MINUTES * 60
+        keep = [i for i, t in enumerate(self.t) if t >= start]
+        vals = [v for _c, s in self.series for i in keep if i < len(s) and (v := s[i]) is not None]
+        # hele tiere med litt luft over og under, minst 30 °C høy
+        lo = math.floor((min(vals) - 2) / 10) * 10 if vals else 30
+        hi = math.ceil((max(vals) + 2) / 10) * 10 if vals else 60
+        hi = max(hi, lo + 30)
+
+        def px(t, v):
+            return ax + (t - start) / (end - start or 1) * aw, ay + ah - (v - lo) / (hi - lo) * ah
+
+        # rutenett og akser
+        cr.set_line_width(1)
+        for v in range(int(lo), int(hi) + 1, 10):
+            _x, y = px(start, v)
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.08)
+            cr.move_to(ax, round(y) + 0.5)
+            cr.line_to(ax + aw, round(y) + 0.5)
+            cr.stroke()
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.6)
+            text = self.fmt_y(v)
+            cr.move_to(ax - cr.text_extents(text).width - 8, y + 4)
+            cr.show_text(text)
+        for i, text in enumerate(self.x_labels):
+            x = ax + i * aw / (len(self.x_labels) - 1)
+            if 0 < i < len(self.x_labels) - 1:
+                cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.08)
+                cr.set_dash([3, 4])
+                cr.move_to(round(x) + 0.5, ay)
+                cr.line_to(round(x) + 0.5, ay + ah)
+                cr.stroke()
+                cr.set_dash([])
+            ext = cr.text_extents(text)
+            tx = ax if i == 0 else ax + aw - ext.width if i == len(self.x_labels) - 1 else x - ext.width / 2
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.6)
+            cr.move_to(tx, ay + ah + 18)
+            cr.show_text(text)
+        if self.limit is not None and lo <= self.limit <= hi:
+            red = _color(self, "vifte_emergency", (0.88, 0.1, 0.14, 1))
+            _x, y = px(start, self.limit)
+            cr.set_source_rgba(red.red, red.green, red.blue, 0.9)
+            cr.set_dash([5, 4])
+            cr.move_to(ax, y)
+            cr.line_to(ax + aw, y)
+            cr.stroke()
+            cr.set_dash([])
+        # linjene, i sammenhengende biter (hull = None)
+        for token, series in self.series:
+            color = _color(self, f"vifte_{token}", (0.5, 0.5, 0.55, 1))
+            runs, cur = [], []
+            for i in keep:
+                v = series[i] if i < len(series) else None
+                if v is None:
+                    if cur:
+                        runs.append(cur)
+                    cur = []
+                else:
+                    cur.append(px(self.t[i], v))
+            if cur:
+                runs.append(cur)
+            for run in runs:
+                cr.move_to(run[0][0], ay + ah)
+                for x, y in run:
+                    cr.line_to(x, y)
+                cr.line_to(run[-1][0], ay + ah)
+                cr.close_path()
+                cr.set_source(_fade(color, ay, ay + ah, 0.22))
+                cr.fill()
+                cr.move_to(*run[0])
+                for x, y in run[1:]:
+                    cr.line_to(x, y)
+                cr.set_source_rgba(color.red, color.green, color.blue, 1)
+                cr.set_line_width(2)
+                cr.set_line_join(cairo.LINE_JOIN_ROUND)
+                cr.stroke()
+            if keep and keep[-1] < len(series) and series[keep[-1]] is not None:
+                _end_dot(cr, *px(self.t[keep[-1]], series[keep[-1]]), color, 3.5)

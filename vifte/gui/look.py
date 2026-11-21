@@ -48,6 +48,76 @@ def palette_css(dark, css_vars=False):
     return "\n".join(lines) + "\n"
 
 
+# Temperaturkortene på Oversikt (designspesifikasjonen, beslutning 14)
+BOARD_PREFIXES = ("/lpc/", "/hwmon/asusec/", "/hwmon/asus_wmi_sensors/")
+DISK_PREFIXES = ("/nvme/", "/hdd/")
+DISK_VENDORS = {"samsung", "wd", "wdc", "western", "digital", "crucial", "kingston", "seagate", "sk", "hynix",
+                "intel", "micron", "sabrent", "corsair", "toshiba", "kioxia", "adata", "xpg", "lexar", "solidigm",
+                "hitachi", "hgst", "sandisk", "teamgroup", "patriot", "pny", "gigabyte", "msi", "transcend",
+                "ssd", "nvme"}
+
+
+def _temps(sensors):
+    return [s for s in sensors if s.get("kind") == "temperature"]
+
+
+def board_sensors(sensors):
+    """Temperatursensorer fra hovedkortbrikkene."""
+    return [s for s in _temps(sensors) if s["id"].startswith(BOARD_PREFIXES)]
+
+
+def board_choice(sensors, saved=None):
+    """Sensoren Hovedkort-kortet viser: brukerens valg hvis den finnes, ellers «Motherboard»,
+    «SYSTIN» eller første hovedkortsensor."""
+    if saved and any(s["id"] == saved for s in _temps(sensors)):
+        return saved
+    board = board_sensors(sensors)
+    for name in ("motherboard", "systin"):
+        hit = next((s for s in board if s["name"].lower() == name), None)
+        if hit:
+            return hit["id"]
+    return board[0]["id"] if board else None
+
+
+def disk_names(hardware):
+    """(fullt navn, kort navn) fra gruppetittelen, f.eks. «NVMe 1 (Samsung SSD 990 PRO 2TB)» →
+    («Samsung SSD 990 PRO 2TB», «990 PRO 2TB»). Kortnavnet er uten produsent."""
+    inner = hardware[hardware.find("(") + 1:hardware.rfind(")")] if "(" in hardware and ")" in hardware else hardware
+    full = inner.strip() or hardware
+    words = full.split()
+    while len(words) > 1 and words[0].lower() in DISK_VENDORS:
+        words.pop(0)
+    return full, " ".join(words)
+
+
+def disks(sensors):
+    """Én oppføring per disk – den første temperatursensoren (som regel «Composite») – som
+    {"id", "full", "short"}."""
+    out, seen = [], set()
+    for s in _temps(sensors):
+        hw = s.get("hardware", "")
+        if s["id"].startswith(DISK_PREFIXES) and hw not in seen:
+            seen.add(hw)
+            full, short = disk_names(hw)
+            out.append({"id": s["id"], "full": full, "short": short})
+    return out
+
+
+def disk_selection(disk_list, values, mode="hottest", pick=None):
+    """Diskene Lagring-kortet viser. mode: «hottest» (standard), «all» eller «pick» (pick = sensor-id).
+    values: {sensor-id: temperatur eller None}."""
+    if not disk_list:
+        return []
+    if mode == "all":
+        return list(disk_list)
+    if mode == "pick":
+        hit = [d for d in disk_list if d["id"] == pick]
+        if hit:
+            return hit
+    known = [d for d in disk_list if values.get(d["id"]) is not None]
+    return [max(known, key=lambda d: values[d["id"]])] if known else [disk_list[0]]
+
+
 def heat_step(temp, previous=None, emergency=False):
     """Fargetonen for vinduet. Går ned først når temperaturen er HEAT_MARGIN under grensen."""
     if emergency:

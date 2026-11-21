@@ -20,8 +20,9 @@ from .common import (Model, StatusHero, combo_row, move_entry, move_group, spin_
                      switch_row)
 from .dialogs import (ControlDialog, CurveDialog, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
                       RenameDialog)
-from .graph import CurveGraph, Sparkline  # noqa: E402
-from .look import fan_summary, heat_step, palette_css, safety_state, temp_status  # noqa: E402
+from .graph import CurveGraph, HistoryGraph, Sparkline  # noqa: E402
+from .look import (board_choice, board_sensors, disk_selection, disks, fan_summary, heat_step,  # noqa: E402
+                   palette_css, safety_state, temp_status)
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -108,34 +109,113 @@ class Card(Gtk.Box):
         self.append(head)
 
 
-class Tile(Gtk.Grid):
-    """Felt i oversikten: ledetekst, status, stor verdi og en linje eller graf nederst."""
-    def __init__(self, label, text=False):
-        super().__init__(column_spacing=8, hexpand=True)
-        self.add_css_class("card")  # vanlig Adwaita-kort i høykontrast, glass ellers
-        self.add_css_class("vifte-tile")
-        lab = Gtk.Label(label=label, xalign=0, hexpand=True)
-        lab.add_css_class("dim-label")
-        lab.add_css_class("caption-heading")
-        self.attach(lab, 0, 0, 1, 1)
-        self.chip = Gtk.Box(spacing=5, visible=False, valign=Gtk.Align.CENTER)
-        self.chip.add_css_class("vifte-chip")
+def themed_image(names, **kw):
+    """Ikon med reserver: det første navnet temaet har (Adwaita mangler f.eks. et CPU-ikon)."""
+    return Gtk.Image(gicon=Gio.ThemedIcon.new_from_names(names), **kw)
+
+
+ICONS = {"cpu": ["cpu-symbolic", "computer-chip-symbolic", "computer-symbolic"],
+         "gpu": ["graphics-card-symbolic", "video-display-symbolic"],
+         "board": ["computer-chip-symbolic", "auth-smartcard-symbolic", "computer-symbolic"],
+         "disk": ["drive-harddisk-solidstate-symbolic", "drive-harddisk-symbolic"],
+         "fan": ["no.vifte.Vifte-symbolic"]}
+
+
+def icon_surface(icon, kind="neutral"):
+    """Liten farget flate med hvitt ikon: CPU marineblå, GPU kobber, ellers nøytral grå."""
+    img = themed_image(ICONS[icon], pixel_size=14, valign=Gtk.Align.CENTER)
+    img.set_css_classes(["vifte-icon-surface", kind])
+    return img
+
+
+def link_button(label, cb):
+    """«Kontroller ›»-lenken øverst til høyre i kortene på Oversikt."""
+    b = Gtk.Button(css_classes=["flat", "vifte-link"], valign=Gtk.Align.CENTER)
+    box = Gtk.Box(spacing=4)
+    box.append(Gtk.Label(label=label))
+    box.append(Gtk.Image(icon_name="go-next-symbolic", pixel_size=12))
+    b.set_child(box)
+    b.connect("clicked", lambda *_a: cb())
+    return b
+
+
+class StatusChip(Gtk.Box):
+    """«● Rolig»-merket. Statusfargen står alltid sammen med tekst."""
+    def __init__(self):
+        super().__init__(spacing=5, visible=False, valign=Gtk.Align.CENTER, css_classes=["vifte-chip"])
         self.dot = Gtk.Box(valign=Gtk.Align.CENTER)
-        self.chip_label = Gtk.Label()
-        self.chip.append(self.dot)
-        self.chip.append(self.chip_label)
-        self.attach(self.chip, 1, 0, 1, 1)
-        self.value = Gtk.Label(label="–", xalign=0, ellipsize=3)
-        self.value.add_css_class("vifte-tile-text" if text else "vifte-tile-value")
-        self.attach(self.value, 0, 1, 2, 1)
+        self.label = Gtk.Label()
+        self.append(self.dot)
+        self.append(self.label)
 
     def set_status(self, name, label):
-        self.chip.set_visible(bool(name))
+        self.set_visible(bool(name))
         self.dot.set_css_classes(["vifte-dot"] + ([name] if name else []))
-        self.chip_label.set_label(label)
+        self.label.set_label(label)
 
-    def add_bottom(self, widget):
-        self.attach(widget, 0, 2, 2, 1)
+
+class TempCard(Gtk.Box):
+    """Temperaturkort på Oversikt: ikon og navn, status, stort tall med sparkline og sensornavn under.
+    Med menu=True får kortet en ⋯-knapp for å velge sensor. set_rows() viser en liste i stedet
+    for det store tallet («Alle disker»)."""
+    def __init__(self, title, icon, kind="neutral", menu=False):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, hexpand=True,
+                         css_classes=["card", "vifte-card", "vifte-temp-card"])
+        head = Gtk.Box(spacing=6)
+        head.append(icon_surface(icon, kind))
+        head.append(Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, tooltip_text=title,
+                              css_classes=["heading"]))
+        self.chip = StatusChip()
+        head.append(self.chip)
+        self.menu = None
+        if menu:
+            self.menu = Gtk.MenuButton(icon_name="view-more-horizontal-symbolic", valign=Gtk.Align.CENTER,
+                                       css_classes=["flat", "vifte-more"], tooltip_text=_("Velg sensor"))
+            head.append(self.menu)
+        self.append(head)
+        self.body = Gtk.Box(spacing=10)
+        self.value = Gtk.Label(label="–", valign=Gtk.Align.END, css_classes=["vifte-big"])
+        self.unit = Gtk.Label(valign=Gtk.Align.END, margin_bottom=5, css_classes=["vifte-unit"])
+        self.spark = Sparkline(color=kind, dot=True, height=34)
+        self.spark.set_valign(Gtk.Align.END)
+        number = Gtk.Box(spacing=3)
+        number.append(self.value)
+        number.append(self.unit)
+        self.body.append(number)
+        self.body.append(self.spark)
+        self.append(self.body)
+        self.rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, visible=False)
+        self.append(self.rows)
+        # liten naturlig bredde, så fire kort får plass på én rad; teksten kuttes bare når plassen mangler
+        self.sub = Gtk.Label(xalign=0, ellipsize=3, max_width_chars=12, css_classes=["caption", "dim-label"])
+        self.append(self.sub)
+
+    def set_temp(self, text):
+        """«41.8 °C» → stort tall og mindre enhet."""
+        number, _sp, unit = text.rpartition(" ")
+        self.value.set_label(number or text)
+        self.unit.set_label(unit if number else "")
+
+    def set_rows(self, rows):
+        """rows: [(kort navn, fullt navn, status, verdi)] eller None for vanlig visning."""
+        self.body.set_visible(rows is None)
+        self.rows.set_visible(rows is not None)
+        if rows is None:
+            return
+        while len(list(self.rows)) > len(rows):
+            self.rows.remove(self.rows.get_last_child())
+        while len(list(self.rows)) < len(rows):
+            row = Gtk.Box(spacing=8)
+            row.append(Gtk.Box(valign=Gtk.Align.CENTER))
+            row.append(Gtk.Label(xalign=0, hexpand=True, ellipsize=3))
+            row.append(Gtk.Label(css_classes=["vifte-sub", "heading"]))
+            self.rows.append(row)
+        for row, (short, full, status, value) in zip(self.rows, rows):
+            dot, name, val = list(row)
+            dot.set_css_classes(["vifte-dot"] + ([status] if status else []))
+            name.set_label(short)
+            name.set_tooltip_text(full)
+            val.set_label(value)
 
 
 class Section(Gtk.ScrolledWindow):
@@ -209,7 +289,7 @@ class Section(Gtk.ScrolledWindow):
 
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Vifte", default_width=1200, default_height=800)
+        super().__init__(application=app, title="Vifte", default_width=1400, default_height=840)
         self.model = Model(Client())
         self.live_dialogs = set()
         self.updaters = []
@@ -320,19 +400,17 @@ class MainWindow(Adw.ApplicationWindow):
         tv.add_top_bar(self.progress)
 
         self.pages = {}
-        pages = (("controls", _("Kontroller"), "preferences-system-symbolic"),
+        pages = (("overview", _("Oversikt"), "go-home-symbolic"),
+                 ("controls", _("Kontroller"), "preferences-system-symbolic"),
                  ("curves", _("Kurver"), "power-profile-performance-symbolic"),
                  ("speeds", _("Hastigheter"), "weather-windy-symbolic"),
                  ("sensors", _("Sensorer"), "temperature-symbolic"))
         for key, title, icon in pages:
-            sec = Section()
-            self.pages[key] = sec
+            sec = self.build_overview() if key == "overview" else Section()
+            if key != "overview":
+                self.pages[key] = sec
             self.stack.add_titled_with_icon(sec, key, title, icon)
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        content.append(self.build_overview())
-        self.stack.set_vexpand(True)
-        content.append(self.stack)
-        tv.set_content(content)
+        tv.set_content(self.stack)
         self.content_page = Adw.NavigationPage(title=pages[0][1], tag="content", child=tv)
         self.split.set_content(self.content_page)
         self.split.set_sidebar(Adw.NavigationPage(title="Vifte", tag="sidebar", child=self.build_sidebar(pages)))
@@ -344,10 +422,16 @@ class MainWindow(Adw.ApplicationWindow):
         style.connect("notify::high-contrast", lambda *_a: self.apply_style_mode())
         self.apply_style_mode()
 
-        bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 700sp"))
-        bp.add_setter(self.split, "collapsed", True)
-        bp.add_setter(self.overview, "visible", False)
-        self.add_breakpoint(bp)
+        # middels bredt: kortene på Oversikt to og to; smalt: i tillegg sidefelt og side hver for seg.
+        # Bare det sist lagt til av breakpointene som passer gjelder, så det smale har alle setterne.
+        for width, collapse in ((1320, False), (700, True)):
+            bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse(f"max-width: {width}sp"))
+            for box in (self.overview_cards, self.overview_bottom):
+                bp.add_setter(box, "orientation", Gtk.Orientation.VERTICAL)
+            bp.add_setter(self.overview_bottom, "homogeneous", False)
+            if collapse:
+                bp.add_setter(self.split, "collapsed", True)
+            self.add_breakpoint(bp)
 
         self.connect("close-request", self.on_close)
         self.poll()
@@ -432,7 +516,8 @@ class MainWindow(Adw.ApplicationWindow):
         row = self.nav_rows.get(key)
         if row is not None and self.nav.get_selected_row() is not row:
             self.nav.select_row(row)
-        title = self.stack.get_page(self.pages[key]).get_title() if key in self.pages else ""
+        child = self.stack.get_visible_child()
+        title = self.stack.get_page(child).get_title() if child else ""
         self.page_title.set_label(title)
         self.content_page.set_title(title)
         self.update_page_subtitle()
@@ -450,6 +535,8 @@ class MainWindow(Adw.ApplicationWindow):
             text = _("{} kurver · {} i bruk").format(len(cfg.curves), len(used))
         elif key == "speeds":
             text = _("Turtall fra alle viftesensorer")
+        elif key == "overview":
+            text = _("Temperaturer og vifter akkurat nå")
         else:
             text = _("Historikk for siste 30 minutter")
         self.page_subtitle.set_label(text)
@@ -469,31 +556,203 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ================================================================ oversikt og fargetone
     def build_overview(self):
-        from ..i18n import get_setting
-        self.tile_cpu, self.tile_gpu = Tile("CPU"), Tile("GPU")
-        self.tile_fans, self.tile_safety = Tile(_("Vifter")), Tile(_("Sikkerhet"), text=True)
-        self.spark_cpu, self.spark_gpu = Sparkline(color="cpu"), Sparkline(color="gpu")
-        self.tile_cpu.add_bottom(self.spark_cpu)
-        self.tile_gpu.add_bottom(self.spark_gpu)
-        self.fans_sub = Gtk.Label(xalign=0, ellipsize=3, margin_top=8)
-        self.safety_sub = Gtk.Label(xalign=0, ellipsize=3, margin_top=8)
-        for lab, tile in ((self.fans_sub, self.tile_fans), (self.safety_sub, self.tile_safety)):
-            lab.add_css_class("dim-label")
-            lab.add_css_class("caption")
-            tile.add_bottom(lab)
-        grid = Gtk.Grid(column_homogeneous=True, column_spacing=12, margin_top=6, margin_bottom=2,
-                        margin_start=24, margin_end=24)
-        grid.attach(self.tile_cpu, 0, 0, 3, 1)
-        grid.attach(self.tile_gpu, 3, 0, 3, 1)
-        grid.attach(self.tile_fans, 6, 0, 2, 1)
-        grid.attach(self.tile_safety, 8, 0, 3, 1)
-        self.overview = Adw.Clamp(maximum_size=1400, child=grid, visible=bool(get_setting("overview_enabled", True)))
-        return self.overview
+        """Oversikt: fire temperaturkort, historikkgraf og kortene Vifter og Beskyttelse."""
+        page = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin_top=4, margin_bottom=24,
+                      margin_start=12, margin_end=12)
+        page.set_child(Adw.Clamp(maximum_size=1400, child=box))
 
-    def set_overview(self, on):
-        from ..i18n import set_setting
-        set_setting("overview_enabled", on)
-        self.overview.set_visible(on)
+        self.card_cpu = TempCard("CPU", "cpu", "cpu")
+        self.card_gpu = TempCard("GPU", "gpu", "gpu")
+        self.card_board = TempCard(_("Hovedkort"), "board", menu=True)
+        self.card_disk = TempCard(_("Lagring"), "disk", menu=True)
+        self.card_board.menu.set_create_popup_func(self.fill_board_menu)
+        self.card_disk.menu.set_create_popup_func(self.fill_disk_menu)
+        # fire på rad; i smale vinduer to og to (breakpointet snur self.overview_cards)
+        self.overview_cards = Gtk.Box(spacing=14, homogeneous=True)
+        for pair in ((self.card_cpu, self.card_gpu), (self.card_board, self.card_disk)):
+            row = Gtk.Box(spacing=14, homogeneous=True)
+            for card in pair:
+                row.append(card)
+            self.overview_cards.append(row)
+        box.append(self.overview_cards)
+
+        # historikk for CPU og GPU
+        hist = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["card", "vifte-card"])
+        head = Gtk.Box(spacing=6)
+        head.append(Gtk.Label(label=_("Temperatur"), css_classes=["heading"]))
+        head.append(Gtk.Label(label="· " + _("siste 30 minutter"), xalign=0, hexpand=True, css_classes=["dim-label"]))
+        for kind, name in (("cpu", "CPU"), ("gpu", "GPU")):
+            item = Gtk.Box(spacing=6, margin_start=10)
+            item.append(Gtk.Box(valign=Gtk.Align.CENTER, css_classes=["vifte-legend", kind]))
+            item.append(Gtk.Label(label=name, css_classes=["caption"]))
+            head.append(item)
+        hist.append(head)
+        self.history_graph = HistoryGraph(height=180)
+        self.history_graph.x_labels = [_("{} min").format("−30"), _("{} min").format("−20"),
+                                       _("{} min").format("−10"), _("Nå")]
+        hist.append(self.history_graph)
+        box.append(hist)
+
+        # nederst: Vifter og Beskyttelse
+        self.overview_bottom = Gtk.Box(spacing=14, homogeneous=True)
+        fans = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["card", "vifte-card", "vifte-bottom-card"])
+        head = Gtk.Box()
+        head.append(Gtk.Label(label=_("Vifter"), xalign=0, hexpand=True, css_classes=["heading"]))
+        head.append(link_button(_("Kontroller"), lambda: self.show_page("controls")))
+        fans.append(head)
+        summary = Gtk.Box(spacing=6, css_classes=["vifte-summary"])
+        self.fans_avg = Gtk.Label(label="–", valign=Gtk.Align.CENTER, css_classes=["vifte-big", "vifte-summary-value"])
+        summary.append(self.fans_avg)
+        summary.append(Gtk.Label(label="%", valign=Gtk.Align.CENTER, margin_top=6, css_classes=["vifte-unit"]))
+        self.fans_sub = Gtk.Label(xalign=0, hexpand=True, ellipsize=3, margin_start=8, valign=Gtk.Align.CENTER,
+                                  css_classes=["caption", "dim-label"])
+        summary.append(self.fans_sub)
+        fans.append(summary)
+        self.overview_fans = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        fans.append(self.overview_fans)
+        self.overview_bottom.append(fans)
+
+        safety = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["card", "vifte-card", "vifte-bottom-card"])
+        head = Gtk.Box()
+        head.append(Gtk.Label(label=_("Beskyttelse"), xalign=0, hexpand=True, css_classes=["heading"]))
+        head.append(link_button(_("Innstillinger"), lambda: self.settings("safety")))
+        safety.append(head)
+        summary = Gtk.Box(spacing=10, css_classes=["vifte-summary"])
+        self.safety_icon = Gtk.Image(icon_name="security-high-symbolic", valign=Gtk.Align.CENTER,
+                                     css_classes=["vifte-status-icon", "calm"])
+        summary.append(self.safety_icon)
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.safety_title = Gtk.Label(xalign=0, ellipsize=3, css_classes=["heading"])
+        self.safety_sub = Gtk.Label(xalign=0, ellipsize=3, css_classes=["caption", "dim-label"])
+        texts.append(self.safety_title)
+        texts.append(self.safety_sub)
+        summary.append(texts)
+        safety.append(summary)
+        rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["vifte-overview-rows"])
+
+        def row(title, control):
+            r = Gtk.Box(spacing=12, css_classes=["vifte-overview-row"])
+            texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+            texts.append(Gtk.Label(label=title, xalign=0, css_classes=["heading"]))
+            sub = Gtk.Label(xalign=0, ellipsize=3, css_classes=["caption", "dim-label"])
+            texts.append(sub)
+            r.append(texts)
+            control.set_valign(Gtk.Align.CENTER)
+            r.append(control)
+            rows.append(r)
+            return sub
+        # samme innstillinger som i Innstillinger › Sikkerhet; ikke send noe når bryterne oppdateres herfra
+        self._ov_syncing = False
+        self.ov_failsafe, self.ov_lost = Gtk.Switch(), Gtk.Switch()
+        for sw, key in ((self.ov_failsafe, "failsafe_enabled"), (self.ov_lost, "sensor_lost_enabled")):
+            sw.connect("notify::active",
+                       lambda w, _p, k=key: self._ov_syncing or self.call("settings", **{k: w.get_active()}))
+        self.ov_failsafe_sub = row(_("Nødmodus"), self.ov_failsafe)
+        self.ov_lost_sub = row(_("Sikring ved sensortap"), self.ov_lost)
+        self.ov_pause = Gtk.Button(action_name="win.pause")
+        pause = Gtk.Box(spacing=6)
+        self.ov_pause_icon = Gtk.Image(icon_name="media-playback-pause-symbolic")
+        self.ov_pause_label = Gtk.Label(label=_("Pause"))
+        pause.append(self.ov_pause_icon)
+        pause.append(self.ov_pause_label)
+        self.ov_pause.set_child(pause)
+        self.ov_control_sub = row(_("Styring"), self.ov_pause)
+        safety.append(rows)
+        self.overview_bottom.append(safety)
+        box.append(self.overview_bottom)
+        return page
+
+    def build_overview_fans(self):
+        """Nøytral liste over viftene på Oversikt – samme kontroller som på Kontroller-siden."""
+        m, cfg = self.model, self.model.cfg
+        box = self.overview_fans
+        while (c := box.get_first_child()):
+            box.remove(c)
+        for e in cfg.controls:
+            if not self.visible(e):
+                continue
+            ident = e.get("Identifier")
+            row = Gtk.Box(spacing=12, css_classes=["vifte-fan-row"])
+            row.append(icon_surface("fan"))
+            row.append(Gtk.Label(label=e.get("NickName") or e.get("Name") or ident, xalign=0, hexpand=True,
+                                 ellipsize=3, css_classes=["heading"]))
+            rpm = Gtk.Label(xalign=1, css_classes=["caption", "dim-label", "vifte-sub"])
+            level = Gtk.LevelBar(min_value=0, max_value=100, valign=Gtk.Align.CENTER)
+            level.set_size_request(100, -1)
+            pct = Gtk.Label(xalign=1, width_chars=5, css_classes=["heading", "vifte-sub"])
+            for w in (rpm, level, pct):
+                row.append(w)
+            box.append(row)
+
+            def update(row=row, rpm=rpm, level=level, pct=pct, ident=ident):
+                st = (m.state.get("control_state") or {}).get(ident, {})
+                row.set_visible(not st.get("no_fan"))
+                out = st.get("out")
+                val = out if out is not None else st.get("read")
+                pct.set_label(f"{val:.0f} %" if val is not None else "–")
+                level.set_value(val or 0)
+                r = st.get("rpm")
+                rpm.set_label(_("BIOS styrer") if out is None else f"{r:.0f} RPM" if r is not None else "")
+                if out is None:
+                    row.add_css_class("idle")   # styres ikke av Vifte: svakere tone
+                else:
+                    row.remove_css_class("idle")
+            self.updaters.append(update)
+
+    def choice_popover(self, items, current, on_pick):
+        """Liste med hake ved valgt oppføring. items: [(nøkkel, tekst, undertekst eller None)];
+        nøkkel None gir en skillelinje."""
+        pop = Gtk.Popover()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=6, margin_bottom=6,
+                      margin_start=6, margin_end=6)
+        for key, text, sub in items:
+            if key is None:
+                box.append(Gtk.Separator(margin_top=4, margin_bottom=4))
+                continue
+            b = Gtk.Button(css_classes=["flat"])
+            row = Gtk.Box(spacing=8)
+            row.append(Gtk.Image(icon_name="object-select-symbolic", opacity=1 if key == current else 0))
+            texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            texts.append(Gtk.Label(label=text, xalign=0))
+            if sub:
+                texts.append(Gtk.Label(label=sub, xalign=0, css_classes=["caption", "dim-label"]))
+            row.append(texts)
+            b.set_child(row)
+            b.connect("clicked", lambda _b, k=key: (pop.popdown(), on_pick(k), self.update_overview()))
+            box.append(b)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                                    max_content_height=420, child=box)
+        pop.set_child(scroll)
+        return pop
+
+    def fill_board_menu(self, button):
+        from ..i18n import get_setting, set_setting
+        sensors = self.model.state.get("sensors", [])
+        # finnes ingen hovedkortsensor, kan hvilken som helst temperatursensor velges
+        options = board_sensors(sensors) or [s for s in sensors if s["kind"] == "temperature"]
+        items = [(s["id"], s["name"], s["hardware"]) for s in options]
+        current = board_choice(sensors, get_setting("overview_board_sensor"))
+        button.set_popover(self.choice_popover(items, current, lambda k: set_setting("overview_board_sensor", k)))
+
+    def fill_disk_menu(self, button):
+        from ..i18n import get_setting, set_setting
+        sensors = self.model.state.get("sensors", [])
+        dl = disks(sensors)
+        mode, pick = get_setting("overview_disk_mode", "hottest"), get_setting("overview_disk_pick")
+        if dl:
+            items = [("hottest", _("Den varmeste disken"), None), ("all", _("Alle disker"), None), (None, None, None)]
+            items += [("pick:" + d["id"], d["short"], d["full"]) for d in dl]
+        else:
+            items = [("pick:" + s["id"], s["name"], s["hardware"]) for s in sensors if s["kind"] == "temperature"]
+        current = "pick:" + str(pick) if mode == "pick" else mode
+
+        def chosen(key):
+            if key.startswith("pick:"):
+                set_setting("overview_disk_pick", key[5:])
+                key = "pick"
+            set_setting("overview_disk_mode", key)
+        button.set_popover(self.choice_popover(items, current, chosen))
 
     def set_tint(self, on):
         from ..i18n import set_setting
@@ -516,30 +775,103 @@ class MainWindow(Adw.ApplicationWindow):
             self._tint = step
 
     def update_overview(self):
+        from ..i18n import get_setting
         m, st = self.model, self.model.state
-        emergency = bool((st.get("failsafe") or {}).get("active"))
-        limit = (st.get("failsafe") or {}).get("temp") or 95
+        fs = st.get("failsafe") or {}
+        emergency, limit = bool(fs.get("active")), fs.get("temp") or 95
         names = {"calm": _("Rolig"), "warm": _("Varm"), "hot": _("Het"), "emergency": _("Nødmodus")}
-        for kind, tile, spark in (("cpu", self.tile_cpu, self.spark_cpu), ("gpu", self.tile_gpu, self.spark_gpu)):
-            ident = self.auto_tray_sensor(kind)
+        sensors = st.get("sensors", [])
+        by_id = {s["id"]: s for s in sensors}
+
+        def status(v):
+            return temp_status(v, emergency and v is not None and v >= limit)
+
+        def show(card, ident, sub, tooltip=None):
             v = m.temp_value(ident) if ident else None
-            tile.value.set_label(m.fmt_temp(v) if v is not None else "–")
-            status = temp_status(v, emergency and v is not None and v >= limit)
-            tile.set_status(status, names.get(status, ""))
-            spark.set_values(m.history_values(ident)[1] if ident else [])
+            card.set_rows(None)
+            card.set_temp(m.fmt_temp(v))
+            card.chip.set_status(status(v), names.get(status(v), ""))
+            card.spark.set_values(m.history_values(ident)[1] if ident else [])
+            card.sub.set_label(sub)
+            card.sub.set_tooltip_text(tooltip or sub)
+            card.sub.set_visible(True)
+
+        def sensor_text(s):
+            if not s:
+                return _("Ingen sensor funnet")
+            return s["hardware"] if s["name"].upper() in ("CPU", "GPU") else f"{s['hardware']} · {s['name']}"
+        for kind, card in (("cpu", self.card_cpu), ("gpu", self.card_gpu)):
+            ident = self.auto_tray_sensor(kind)
+            show(card, ident, sensor_text(by_id.get(ident)))
+        ident = board_choice(sensors, get_setting("overview_board_sensor"))
+        show(self.card_board, ident, sensor_text(by_id.get(ident)))
+
+        # lagring: den varmeste disken, alle disker eller én bestemt
+        dl = disks(sensors)
+        mode, pick = get_setting("overview_disk_mode", "hottest"), get_setting("overview_disk_pick")
+        values = {d["id"]: m.temp_value(d["id"]) for d in dl}
+        chosen = disk_selection(dl, values, mode, pick)
+        if not dl:
+            ident = pick if mode == "pick" and pick in by_id else None
+            show(self.card_disk, ident, sensor_text(by_id.get(ident)))
+        elif mode == "all" and len(chosen) > 1:
+            self.card_disk.set_rows([(d["short"], d["full"], status(values[d["id"]]), m.fmt_temp(values[d["id"]]))
+                                     for d in chosen])
+            hottest = max((v for v in values.values() if v is not None), default=None)
+            self.card_disk.chip.set_status(status(hottest), names.get(status(hottest), ""))
+            self.card_disk.sub.set_visible(False)
+        else:
+            d = chosen[0]
+            sub = d["short"] + (" · " + _("varmest av {}").format(len(dl)) if mode == "hottest" and len(dl) > 1 else "")
+            show(self.card_disk, d["id"], sub, d["full"])
+
+        # historikk
+        t, series = [], []
+        for kind in ("cpu", "gpu"):
+            ident = self.auto_tray_sensor(kind)
+            if ident:
+                t, vals = m.history_values(ident)
+                series.append((kind, vals))
+        if m.fahrenheit:
+            self.history_graph.fmt_y = lambda v: f"{v * 9 / 5 + 32:.0f} °F"
+        else:
+            self.history_graph.fmt_y = lambda v: f"{v:.0f} °C"
+        self.history_graph.set_data(t, series, limit if fs.get("enabled") else None)
+
+        # vifter
         avg, fans, pumps = fan_summary(st.get("control_state") or {})
-        self.tile_fans.value.set_label(f"{avg:.0f} %" if avg is not None else "–")
-        text = _("{} styrt").format(fans)
-        self.fans_sub.set_label(text + (" · " + _("Pumper: {}").format(pumps) if pumps else ""))
+        self.fans_avg.set_label(f"{avg:.0f}" if avg is not None else "–")
+        self.fans_sub.set_label(" · ".join([_("snitt av styrte vifter"), _("{} styrt").format(fans)] +
+                                           ([_("Pumper: {}").format(pumps)] if pumps else [])))
+
+        # beskyttelse
         state = safety_state(st)
-        self.tile_safety.value.set_label({"emergency": _("Nødmodus"), "sensor_lost": _("Sensor borte"),
-                                          "paused": _("Styring på pause"), "ok": _("Alt i orden"),
-                                          "no_emergency": _("Nødmodus av")}[state])
+        self.safety_title.set_label({"emergency": _("Nødmodus"), "sensor_lost": _("Sensor borte"),
+                                     "paused": _("Styring på pause"), "ok": _("Alt i orden"),
+                                     "no_emergency": _("Nødmodus av")}[state])
         self.safety_sub.set_label({"emergency": _("Alle styrte vifter går på 100 %"),
                                    "sensor_lost": _("Viftene går på sikker hastighet"),
                                    "paused": _("BIOS styrer viftene"),
                                    "no_emergency": _("Kan slås på i innstillingene")}.get(
             state, _("Nødmodus ved {}").format(m.fmt_temp(limit))))
+        self.safety_icon.set_from_icon_name("security-high-symbolic" if state == "ok" else "dialog-warning-symbolic")
+        self.safety_icon.set_css_classes(["vifte-status-icon", {"ok": "calm", "emergency": "emergency"}.get(state, "warm")])
+        safety = st.get("safety") or {}
+        mcp = bool(safety.get("mcp_enabled"))   # mens Claude har tilgang er begge på og låst, som i Innstillinger
+        self._ov_syncing = True
+        self.ov_failsafe.set_active(mcp or bool(safety.get("failsafe_enabled")))
+        self.ov_lost.set_active(mcp or bool(safety.get("sensor_lost_enabled", True)))
+        self._ov_syncing = False
+        for sw in (self.ov_failsafe, self.ov_lost):
+            sw.set_sensitive(not mcp)
+            sw.set_tooltip_text(_("Begge er alltid på mens Claude-tilgang er slått på.") if mcp else None)
+        self.ov_failsafe_sub.set_label(_("Alle styrte vifter på 100 % ved {}").format(
+            m.fmt_temp(safety.get("failsafe_temp", limit))))
+        self.ov_lost_sub.set_label(_("{} % hvis en kurves sensor forsvinner").format(safety.get("sensor_lost_speed", 80)))
+        paused = bool(st.get("paused"))
+        self.ov_control_sub.set_label(_("BIOS styrer viftene") if paused else _("Vifte styrer viftene"))
+        self.ov_pause_icon.set_from_icon_name("media-playback-start-symbolic" if paused else "media-playback-pause-symbolic")
+        self.ov_pause_label.set_label(_("Fortsett") if paused else _("Pause"))
 
     def on_close(self, *_a):
         app = self.get_application()
@@ -653,6 +985,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.apply_theme()
         self.updaters = []
         self.build_profiles()
+        self.build_overview_fans()
         self.build_controls()
         self.build_curves()
         self.build_speeds()
@@ -1541,8 +1874,6 @@ class MainWindow(Adw.ApplicationWindow):
         from ..i18n import get_setting as setting
         g.add(switch_row(_("Farge følger temperaturen"), setting("tint_enabled", False), self.set_tint,
                          _("Svak fargetone i vinduet: kjølig ved tomgang, varm under last, rød i nødmodus")))
-        g.add(switch_row(_("Vis oversikt"), setting("overview_enabled", True), self.set_overview,
-                         _("CPU, GPU, vifter og sikkerhet øverst i vinduet")))
         g.add(switch_row(_("Fahrenheit"), self.model.fahrenheit, self.set_fahrenheit,
                          _("Vis temperaturer i °F i stedet for °C")))
         g.add(switch_row(_("Hastigheter bruker viftenavnet"), self.model.names_follow_pairing,

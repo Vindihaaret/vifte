@@ -890,6 +890,51 @@ class LookTests(unittest.TestCase):
         self.assertEqual(safety_state({**ok, "sensor_lost": {"controls": {"x": ["s"]}}}), "sensor_lost")
         self.assertEqual(safety_state({"failsafe": {"enabled": True, "active": True}}), "emergency")
 
+    SENSORS = [
+        {"id": "/amdcpu/0/temperature/2", "name": "Core (Tctl/Tdie)", "kind": "temperature", "hardware": "AMD CPU"},
+        {"id": "/hwmon/asusec/0/temperature/0", "name": "CPU", "kind": "temperature", "hardware": "ASUS EC"},
+        {"id": "/hwmon/asusec/0/temperature/2", "name": "Motherboard", "kind": "temperature", "hardware": "ASUS EC"},
+        {"id": "/lpc/nct6799d/temperature/0", "name": "SYSTIN", "kind": "temperature", "hardware": "Hovedkort"},
+        {"id": "/lpc/nct6799d/fan/1", "name": "Fan #2", "kind": "fan", "hardware": "Hovedkort"},
+        {"id": "/nvme/0/temperature/0", "name": "Composite", "kind": "temperature",
+         "hardware": "NVMe 0 (Samsung SSD 980 PRO 1TB)"},
+        {"id": "/nvme/0/temperature/1", "name": "Sensor 1", "kind": "temperature",
+         "hardware": "NVMe 0 (Samsung SSD 980 PRO 1TB)"},
+        {"id": "/nvme/1/temperature/0", "name": "Composite", "kind": "temperature",
+         "hardware": "NVMe 1 (Samsung SSD 990 PRO 2TB)"},
+        {"id": "/hdd/0/temperature/0", "name": "Temperature", "kind": "temperature",
+         "hardware": "WDC WD40EFRX-68N32N0"},
+    ]
+
+    def test_board_sensor_choice(self):
+        from vifte.gui.look import board_choice, board_sensors
+        self.assertEqual([s["id"] for s in board_sensors(self.SENSORS)],
+                         ["/hwmon/asusec/0/temperature/0", "/hwmon/asusec/0/temperature/2",
+                          "/lpc/nct6799d/temperature/0"])
+        self.assertEqual(board_choice(self.SENSORS), "/hwmon/asusec/0/temperature/2")       # «Motherboard»
+        no_mb = [s for s in self.SENSORS if s["name"] != "Motherboard"]
+        self.assertEqual(board_choice(no_mb), "/lpc/nct6799d/temperature/0")               # «SYSTIN»
+        self.assertEqual(board_choice(self.SENSORS, "/amdcpu/0/temperature/2"), "/amdcpu/0/temperature/2")
+        self.assertEqual(board_choice(self.SENSORS, "/borte"), "/hwmon/asusec/0/temperature/2")
+        self.assertIsNone(board_choice(self.SENSORS[:1]))
+
+    def test_disks_and_selection(self):
+        from vifte.gui.look import disk_names, disk_selection, disks
+        self.assertEqual(disk_names("NVMe 1 (Samsung SSD 990 PRO 2TB)"), ("Samsung SSD 990 PRO 2TB", "990 PRO 2TB"))
+        self.assertEqual(disk_names("WDC WD40EFRX-68N32N0"), ("WDC WD40EFRX-68N32N0", "WD40EFRX-68N32N0"))
+        self.assertEqual(disk_names("Samsung"), ("Samsung", "Samsung"))
+        d = disks(self.SENSORS)
+        self.assertEqual([x["id"] for x in d], ["/nvme/0/temperature/0", "/nvme/1/temperature/0",
+                                                "/hdd/0/temperature/0"])   # én sensor per disk
+        values = {"/nvme/0/temperature/0": 52.0, "/nvme/1/temperature/0": 47.0, "/hdd/0/temperature/0": None}
+        self.assertEqual([x["id"] for x in disk_selection(d, values)], ["/nvme/0/temperature/0"])
+        self.assertEqual(len(disk_selection(d, values, "all")), 3)
+        self.assertEqual([x["id"] for x in disk_selection(d, values, "pick", "/nvme/1/temperature/0")],
+                         ["/nvme/1/temperature/0"])
+        self.assertEqual([x["id"] for x in disk_selection(d, values, "pick", "/borte")], ["/nvme/0/temperature/0"])
+        self.assertEqual([x["id"] for x in disk_selection(d, {})], ["/nvme/0/temperature/0"])
+        self.assertEqual(disk_selection([], values), [])
+
     def test_palette_has_the_same_tokens_in_light_and_dark(self):
         from vifte.gui.look import PALETTE, STATUS_COLORS, palette_css
         self.assertEqual(set(PALETTE["dark"]), set(PALETTE["light"]))
