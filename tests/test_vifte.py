@@ -945,6 +945,25 @@ class LookTests(unittest.TestCase):
         self.assertEqual(clamp_point(pts, 2, 120, 140), (120, 100))
         self.assertEqual(clamp_point(pts, 2, 120, 2400, 2000), (120, 2000))   # RPM-modus
 
+    def test_history_ticks(self):
+        from vifte.gui.look import HISTORY_RANGES, history_ticks
+        self.assertEqual(history_ticks(5), [5, 4, 3, 2, 1, 0])
+        self.assertEqual(history_ticks(10), [10, 8, 6, 4, 2, 0])
+        self.assertEqual(history_ticks(30), [30, 20, 10, 0])
+        for n in HISTORY_RANGES:
+            self.assertEqual((history_ticks(n)[0], history_ticks(n)[-1]), (n, 0))
+
+    def test_merge_history_uses_live_seconds_after_the_first_one(self):
+        from vifte.gui.look import merge_history
+        t = [100, 105, 110, 115]
+        series = {"cpu": [40, 41, 42, 43], "gpu": [50, 51]}       # gpu kortere: resten mangler
+        t2, out = merge_history(t, series, [111, 112, 113], {"cpu": [44, 45, 46]})
+        self.assertEqual(t2, [100, 105, 110, 111, 112, 113])
+        self.assertEqual(out["cpu"], [40, 41, 42, 44, 45, 46])
+        self.assertEqual(out["gpu"], [50, 51, None, None, None, None])
+        # uten sekundmålinger: bare tjenestens historikk
+        self.assertEqual(merge_history(t, series, [], {}), (t, {"cpu": [40, 41, 42, 43], "gpu": [50, 51, None, None]}))
+
     def test_group_kind(self):
         from vifte.gui.look import group_kind
         self.assertEqual(group_kind(["/amdcpu/0/temperature/2", "/amdcpu/0/temperature/3"]), "cpu")

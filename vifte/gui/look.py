@@ -144,6 +144,31 @@ def clamp_point(points, i, temp, value, value_max=100.0):
     return temp, min(max(value, 0.0), value_max)
 
 
+HISTORY_RANGES = (5, 10, 30)      # minutter å velge mellom i temperaturgrafen på Oversikt
+LIVE_KEEP = 600                   # sekundmålinger vinduet tar vare på selv (10 minutter)
+
+
+def history_ticks(minutes):
+    """Minuttene tidsaksen merkes med, fra eldst til nå: 5 → 5, 4 … 0; 10 → 10, 8 … 0; 30 → 30, 20, 10, 0."""
+    step = 1 if minutes <= 5 else 2 if minutes <= 10 else 10
+    return list(range(minutes, -1, -step))
+
+
+def merge_history(t, series, live_t, live_series):
+    """Fletter tjenestens historikk (et punkt hvert 5. sekund) med vinduets egne sekundmålinger:
+    tjenestens punkter brukes fram til den første sekundmålingen, deretter sekundmålingene.
+    series og live_series: {navn: verdier}. Gir (tidspunkter, {navn: verdier})."""
+    cut = live_t[0] if live_t else float("inf")
+    keep = [i for i, x in enumerate(t) if x < cut]
+    out = {}
+    for name in set(series) | set(live_series):
+        old = series.get(name) or []
+        new = live_series.get(name) or []
+        out[name] = ([old[i] if i < len(old) else None for i in keep]
+                     + [new[i] if i < len(new) else None for i in range(len(live_t))])
+    return [t[i] for i in keep] + list(live_t), out
+
+
 def heat_step(temp, previous=None, emergency=False):
     """Fargetonen for vinduet. Går ned først når temperaturen er HEAT_MARGIN under grensen."""
     if emergency:

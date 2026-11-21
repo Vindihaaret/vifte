@@ -70,6 +70,9 @@
 .vifte-glass .vifte-link { color: @vifte_accent_text; }
 .vifte-legend { min-width: 14px; min-height: 3px; border-radius: 99px; background-color: @vifte_cpu; }
 .vifte-legend.gpu { background-color: @vifte_gpu; }
+/* tidsrom for temperaturgrafen: små knapper, valgt i aksentfarge */
+.vifte-range > button { min-height: 22px; padding: 0 8px; font-size: 0.85em; font-weight: 600; }
+.vifte-range > button:checked { background-color: @vifte_selected; color: @vifte_accent_text; }
 .vifte-bottom-card { padding: 14px 18px 8px 18px; }
 .vifte-summary { min-height: 54px; margin-top: 4px; border-bottom: 1px solid alpha(currentColor, 0.1); }
 .vifte-summary-value { font-size: 26px; }

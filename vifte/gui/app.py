@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 import time
+from collections import deque
 
 import gi
 
@@ -22,7 +23,8 @@ from .dialogs import (ControlDialog, CurveEditor, CustomSensorDialog, PromptDial
                       RenameDialog)
 from .graph import HistoryGraph, MiniCurve, Sparkline  # noqa: E402
 from .look import (board_choice, board_sensors, disk_selection, disks, fan_summary, group_kind,  # noqa: E402
-                   heat_step, PALETTE, palette_css, safety_state, temp_status)
+                   heat_step, HISTORY_RANGES, history_ticks, LIVE_KEEP, merge_history, PALETTE, palette_css,
+                   safety_state, temp_status)
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -341,7 +343,7 @@ class MainWindow(Adw.ApplicationWindow):
         child.append(Gtk.Image(icon_name="pan-down-symbolic"))
         self.profile_btn.set_child(child)
 
-        # høyre: pause, meny og lagre
+        # høyre: meny og lagre (pause ligger i Beskyttelse-kortet og i menyen)
         menu = Gio.Menu()
         sec = Gio.Menu()
         sec.append(_("Importer FanControl-konfigurasjon …"), "win.import")
@@ -372,9 +374,7 @@ class MainWindow(Adw.ApplicationWindow):
         mb.connect("notify::active", lambda b, _p: b.get_active() and self.refresh_stress_menu())
         self.save_btn = Gtk.Button(label=_("Lagre"), tooltip_text=_("Lagre konfigurasjonen (Ctrl+S)"))
         self.save_btn.connect("clicked", lambda *_: self.save())
-        self.pause_btn = Gtk.Button(action_name="win.pause", icon_name="media-playback-pause-symbolic",
-                                    tooltip_text=_("Pause styring"))
-        for b in (self.save_btn, mb, self.pause_btn):
+        for b in (self.save_btn, mb):
             b.set_valign(Gtk.Align.CENTER)   # hodet er 72 px høyt
         # «Ny sensor» står i sidehodet og vises bare på Sensorer
         self.add_sensor_btn = Gtk.MenuButton(always_show_arrow=True, valign=Gtk.Align.CENTER, visible=False)
@@ -392,7 +392,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.add_action(a)
         header.pack_end(self.save_btn)
         header.pack_end(mb)
-        header.pack_end(self.pause_btn)
         header.pack_end(self.add_sensor_btn)
         self.add_curve_btn = Gtk.MenuButton(always_show_arrow=True, valign=Gtk.Align.CENTER, visible=False)
         add = Gtk.Box(spacing=6)
@@ -453,6 +452,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.stack.add_titled_with_icon(sec, key, title, icon)
         tv.set_content(self.stack)
         self.curve_selected = None
+        self.live_history = deque(maxlen=LIVE_KEEP)   # [(tid, {sensor-id: °C})] hvert sekund, for grafen på Oversikt
         self._curve_building = False
         self.pages["curves"].list.connect(
             "row-selected", lambda _l, row: row is not None and not self._curve_building and self.show_curve(row.name))
@@ -640,17 +640,27 @@ class MainWindow(Adw.ApplicationWindow):
         hist = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["card", "vifte-card"])
         head = Gtk.Box(spacing=6)
         head.append(Gtk.Label(label=_("Temperatur"), css_classes=["heading"]))
-        head.append(Gtk.Label(label="· " + _("siste 30 minutter"), xalign=0, hexpand=True, css_classes=["dim-label"]))
+        self.history_span = Gtk.Label(xalign=0, hexpand=True, css_classes=["dim-label"])
+        head.append(self.history_span)
         for kind, name in (("cpu", "CPU"), ("gpu", "GPU")):
             item = Gtk.Box(spacing=6, margin_start=10)
             item.append(Gtk.Box(valign=Gtk.Align.CENTER, css_classes=["vifte-legend", kind]))
             item.append(Gtk.Label(label=name, css_classes=["caption"]))
             head.append(item)
+        # små valg for tidsrommet; grafen og tidsaksen følger med
+        ranges = Gtk.Box(margin_start=14, valign=Gtk.Align.CENTER, css_classes=["linked", "vifte-range"])
+        first = None
+        for minutes in HISTORY_RANGES:
+            b = Gtk.ToggleButton(label=_("{} min").format(minutes), group=first)
+            first = first or b
+            b.set_active(minutes == self.history_minutes())
+            b.connect("toggled", lambda btn, n=minutes: btn.get_active() and self.set_history_range(n))
+            ranges.append(b)
+        head.append(ranges)
         hist.append(head)
         self.history_graph = HistoryGraph(height=180)
-        self.history_graph.x_labels = [_("{} min").format("−30"), _("{} min").format("−20"),
-                                       _("{} min").format("−10"), _("Nå")]
         hist.append(self.history_graph)
+        self.set_history_range(self.history_minutes())
         box.append(hist)
 
         # nederst: Vifter og Beskyttelse
@@ -833,6 +843,20 @@ class MainWindow(Adw.ApplicationWindow):
                 self.main_view.add_css_class(f"vifte-tint-{step}")
             self._tint = step
 
+    def history_minutes(self):
+        from ..i18n import get_setting
+        n = get_setting("overview_history_minutes", 30)
+        return n if n in HISTORY_RANGES else 30
+
+    def set_history_range(self, minutes):
+        from ..i18n import get_setting, set_setting
+        if get_setting("overview_history_minutes", 30) != minutes:
+            set_setting("overview_history_minutes", minutes)
+        self.history_span.set_label("· " + _("siste {} minutter").format(minutes))
+        self.history_graph.minutes = minutes
+        self.history_graph.x_labels = [_("{} min").format(f"−{n}") if n else _("Nå") for n in history_ticks(minutes)]
+        self.history_graph.queue_draw()
+
     def update_overview(self):
         from ..i18n import get_setting
         m, st = self.model, self.model.state
@@ -884,13 +908,18 @@ class MainWindow(Adw.ApplicationWindow):
             sub = d["short"] + (" · " + _("varmest av {}").format(len(dl)) if mode == "hottest" and len(dl) > 1 else "")
             show(self.card_disk, d["id"], sub, d["full"])
 
-        # historikk
-        t, series = [], []
-        for kind in ("cpu", "gpu"):
-            ident = self.auto_tray_sensor(kind)
-            if ident:
-                t, vals = m.history_values(ident)
-                series.append((kind, vals))
+        # historikk: tjenestens punkter (hvert 5. s) flettet med vinduets egne sekundmålinger
+        idents = {kind: ident for kind in ("cpu", "gpu") if (ident := self.auto_tray_sensor(kind))}
+        now = round(time.time())
+        if not self.live_history or self.live_history[-1][0] < now:
+            self.live_history.append((now, {i: m.temp_value(i) for i in idents.values()}))
+        t, daemon = [], {}
+        for kind, ident in idents.items():
+            t, daemon[kind] = m.history_values(ident)
+        live_t = [x for x, _v in self.live_history]
+        live = {kind: [v.get(ident) for _x, v in self.live_history] for kind, ident in idents.items()}
+        t, merged = merge_history(t, daemon, live_t, live)
+        series = [(kind, merged[kind]) for kind in idents]
         if m.fahrenheit:
             self.history_graph.fmt_y = lambda v: f"{v * 9 / 5 + 32:.0f} °F"
         else:
@@ -1087,9 +1116,6 @@ class MainWindow(Adw.ApplicationWindow):
             self.save_btn.add_css_class("suggested-action")
         else:
             self.save_btn.remove_css_class("suggested-action")
-        paused = bool(m.state.get("paused"))
-        self.pause_btn.set_icon_name("media-playback-start-symbolic" if paused else "media-playback-pause-symbolic")
-        self.pause_btn.set_tooltip_text(_("Fortsett styring") if paused else _("Pause styring"))
         self.update_page_subtitle()
 
     def visible(self, entry):

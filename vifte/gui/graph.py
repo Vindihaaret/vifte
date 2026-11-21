@@ -301,7 +301,6 @@ class HistoryGraph(Gtk.DrawingArea):
     """Stor temperaturgraf på Oversikt: flere linjer over de siste minuttene, stiplet nødlinje.
     Verdiene er i °C; fmt_y lager aksetekstene (f.eks. i °F)."""
 
-    MINUTES = 30
     PAD_L, PAD_R, PAD_T, PAD_B = 46, 10, 8, 26
 
     def __init__(self, height=180):
@@ -309,6 +308,7 @@ class HistoryGraph(Gtk.DrawingArea):
         self.t = []
         self.series = []          # [(fargetoken, verdier)]
         self.limit = None         # nødtemperatur, eller None
+        self.minutes = 30         # hvor langt tilbake grafen viser
         self.fmt_y = lambda v: f"{v:.0f} °C"
         self.x_labels = ["−30 min", "−20 min", "−10 min", "0"]
         self.set_content_height(height)
@@ -326,7 +326,7 @@ class HistoryGraph(Gtk.DrawingArea):
         cr.select_font_face("Sans")
         cr.set_font_size(11)
         end = self.t[-1] if self.t else 0
-        start = end - self.MINUTES * 60
+        start = end - self.minutes * 60
         keep = [i for i, t in enumerate(self.t) if t >= start]
         vals = [v for _c, s in self.series for i in keep if i < len(s) and (v := s[i]) is not None]
         # hele tiere med litt luft over og under, minst 30 °C høy

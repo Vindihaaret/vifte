@@ -1,4 +1,6 @@
 """Dialoger: kontrollinnstillinger, kurveredigering, egendefinerte sensorer, omkobling."""
+import locale
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -568,32 +570,52 @@ class CurveEditor(Gtk.Box):
     def build_hysteresis(self, page, c):
         up, down, rtu, rtd, ign = hysteresis(c)
         new = "HysteresisConfig" in c
-        g = Adw.PreferencesGroup(title=_("Hysterese og responstid"))
-        page.add(g)
+        # sammenleggbar, så grafen står høyt oppe; tittelen viser verdiene i kortform
+        group = Adw.PreferencesGroup()
+        page.add(group)
+        g = Adw.ExpanderRow(title=_("Hysterese og responstid"),
+                            expanded=getattr(self.win, "hysteresis_expanded", False))
+        g.connect("notify::expanded", lambda r, _p: setattr(self.win, "hysteresis_expanded", r.get_expanded()))
+        group.add(g)
         self.hyst = {"up": up, "down": down, "rtu": rtu, "rtd": rtd, "ign": ign}
+
+        def num(v):
+            return locale.format_string("%g", float(v or 0))
+
+        def summary():
+            h = self.hyst
+            g.set_subtitle(f"↑ {num(h['up'])} °C  ↓ {num(h['down'])} °C · ↑ {num(h['rtu'])} s  ↓ {num(h['rtd'])} s")
 
         def upd(k, v):
             self.hyst[k] = v
             h = self.hyst
             set_hysteresis(self.curve(), h["up"], h["down"], h["rtu"], h["rtd"], h["ign"], new_style=new)
+            summary()
             self.changed(False)
         if new:
-            g.add(spin_row(_("Hysterese opp °C"), up, 0, 50, 0.5, lambda v: upd("up", v), digits=1))
-            g.add(spin_row(_("Hysterese ned °C"), down, 0, 50, 0.5, lambda v: upd("down", v), digits=1))
-            g.add(spin_row(_("Responstid opp (s)"), rtu, 0, 600, 1, lambda v: upd("rtu", v)))
-            g.add(spin_row(_("Responstid ned (s)"), rtd, 0, 600, 1, lambda v: upd("rtd", v)))
-            g.add(switch_row(_("Ignorer hysterese ved min/maks"), ign, lambda v: upd("ign", v)))
+            g.add_row(spin_row(_("Hysterese opp °C"), up, 0, 50, 0.5, lambda v: upd("up", v), digits=1))
+            g.add_row(spin_row(_("Hysterese ned °C"), down, 0, 50, 0.5, lambda v: upd("down", v), digits=1))
+            g.add_row(spin_row(_("Responstid opp (s)"), rtu, 0, 600, 1, lambda v: upd("rtu", v)))
+            g.add_row(spin_row(_("Responstid ned (s)"), rtd, 0, 600, 1, lambda v: upd("rtd", v)))
+            g.add_row(switch_row(_("Ignorer hysterese ved min/maks"), ign, lambda v: upd("ign", v)))
+            summary()
         else:
             old = {"h": down, "rt": rtd, "one": up == 0 and down > 0}
+
+            def summary_old():
+                arrow = "↓ " if old["one"] else "± "
+                g.set_subtitle(f"{arrow}{num(old['h'])} °C · {num(old['rt'])} s")
 
             def upd_old(k, v):
                 old[k] = v
                 set_hysteresis(self.curve(), 0 if old["one"] else old["h"], old["h"], old["rt"], old["rt"],
                                False, new_style=False)
+                summary_old()
                 self.changed(False)
-            g.add(spin_row(_("Hysterese °C"), down, 0, 50, 0.5, lambda v: upd_old("h", v), digits=1))
-            g.add(spin_row(_("Responstid (s)"), rtd, 0, 600, 1, lambda v: upd_old("rt", v)))
-            g.add(switch_row(_("Kun én vei (bare ved synkende temperatur)"), old["one"],
+            summary_old()
+            g.add_row(spin_row(_("Hysterese °C"), down, 0, 50, 0.5, lambda v: upd_old("h", v), digits=1))
+            g.add_row(spin_row(_("Responstid (s)"), rtd, 0, 600, 1, lambda v: upd_old("rt", v)))
+            g.add_row(switch_row(_("Kun én vei (bare ved synkende temperatur)"), old["one"],
                              lambda v: upd_old("one", v)))
 
     def delete(self, _b):

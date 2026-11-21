@@ -45,7 +45,7 @@ EN = {
     "Temperaturer og vifter akkurat nå": "Temperatures and fans right now",
     "Lagring": "Storage",
     "Temperatur": "Temperature",
-    "siste 30 minutter": "last 30 minutes",
+    "siste {} minutter": "last {} minutes",
     "{} min": "{} min",
     "Beskyttelse": "Protection",
     "snitt av styrte vifter": "average of controlled fans",
@@ -65,8 +65,6 @@ EN = {
     "{} kurver · {} i bruk": "{} curves · {} in use",
     "Turtall fra alle viftesensorer": "Speeds from all fan sensors",
     "Historikk for siste 30 minutter": "History for the last 30 minutes",
-    "Pause styring": "Pause control",
-    "Fortsett styring": "Resume control",
     "Om Vifte": "About Vifte",
     "Får ikke kontakt med tjenesten vifted ({}). Kjør: sudo systemctl enable --now vifted":
         "Cannot reach the vifted service ({}). Run: sudo systemctl enable --now vifted",
