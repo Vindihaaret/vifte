@@ -40,7 +40,7 @@ Prototypen er HTML/CSS, ikke GTK. Bruk den som fasit for **hva** det skal se ut 
 8. **Viftelister er nøytrale:** hvitgrå ikoner og stolper i mørk modus, nesten sort i lys. Vifter som ikke
    styres (BIOS) får svakere tone + teksten «BIOS styrer». Gjelder både Oversikt og Kontroller.
 9. **Dialoger forblir rolige og ugjennomsiktige** (som i dag). Glasset gjelder hovedvinduet.
-10. **Oversiktsrutene (CPU, GPU, Vifter, Sikkerhet) vises bare på Oversikt-siden**, ikke øverst på de andre
+10. **Oversiktsrutene vises bare på Oversikt-siden**, ikke øverst på de andre
     sidene. Innstillingen «Vis oversikt» (`overview_enabled`) fjernes fra Innstillinger › Generelt, siden den
     ikke lenger har noen funksjon.
 11. **Kurver redigeres som liste + detalj på Kurver-siden** (ikke i dialog), som i prototypen.
