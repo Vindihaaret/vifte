@@ -227,12 +227,14 @@ def _ticks(lo, hi, step):
 
 
 class Sparkline(Gtk.DrawingArea):
-    """Liten historikkgraf for et sensorkort. Hull (None) tegnes som brudd i linjen."""
+    """Liten historikkgraf for et sensorkort. Hull (None) tegnes som brudd i linjen.
+    color: identitetsfargen «cpu», «gpu» eller «neutral» (fargetokens vifte_* i look.py)."""
 
-    def __init__(self, min_span=5.0, height=36):
+    def __init__(self, min_span=5.0, height=36, color="neutral"):
         super().__init__()
         self.values = []
         self.min_span = min_span
+        self.color = color
         self.set_content_height(height)
         self.set_hexpand(True)
         self.set_draw_func(self._draw)
@@ -255,7 +257,7 @@ class Sparkline(Gtk.DrawingArea):
         def xy(i, v):
             return i * (w - 1) / (n - 1), 2 + (h - 4) * (1 - (v - lo) / (hi - lo))
 
-        accent = _color(self, "accent_color", (0.2, 0.5, 0.9, 1))
+        accent = _color(self, f"vifte_{self.color}", (0.5, 0.5, 0.55, 1))
         # del opp i sammenhengende biter
         runs, cur = [], []
         for i, v in enumerate(self.values):

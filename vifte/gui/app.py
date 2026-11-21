@@ -21,7 +21,7 @@ from .common import (Model, StatusHero, combo_row, move_entry, move_group, spin_
 from .dialogs import (ControlDialog, CurveDialog, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
                       RenameDialog)
 from .graph import CurveGraph, Sparkline  # noqa: E402
-from .look import fan_summary, heat_step, safety_state, temp_status  # noqa: E402
+from .look import fan_summary, heat_step, palette_css, safety_state, temp_status  # noqa: E402
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -31,51 +31,7 @@ ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 AUTOSTART_SYSTEM = "/etc/xdg/autostart/no.vifte.Vifte-tray.desktop"
 STRESS_URL = "https://github.com/Vindihaaret/stress"
 
-CSS = """
-.vifte-card { padding: 14px 16px; min-width: 260px; }
-.vifte-big { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; font-feature-settings: "tnum"; }
-.vifte-sub { font-feature-settings: "tnum"; }
-
-/* Hovedvinduet: kort i lag oppå en svak fargetone. Dialogene ligger utenfor og forblir rolige. */
-.vifte-main { transition: background-image 1200ms ease; }
-.vifte-main headerbar { background: none; box-shadow: none; }
-.vifte-main .vifte-card, .vifte-tile {
-  background-color: alpha(white, 0.065); border-radius: 16px;
-  box-shadow: inset 0 1px alpha(white, 0.09), inset 0 0 0 1px alpha(white, 0.07), 0 6px 20px alpha(black, 0.16);
-}
-.vifte-light .vifte-card, .vifte-light .vifte-tile {
-  background-color: alpha(white, 0.74);
-  box-shadow: inset 0 0 0 1px alpha(black, 0.06), 0 6px 18px alpha(black, 0.07);
-}
-.vifte-tint-cool { background-image: radial-gradient(farthest-side at 10% 0, alpha(#4a8fd0, 0.30), transparent); }
-.vifte-tint-mild { background-image: radial-gradient(farthest-side at 10% 0, alpha(#48a89a, 0.28), transparent); }
-.vifte-tint-warm { background-image: radial-gradient(farthest-side at 10% 0, alpha(#d9a03a, 0.30), transparent); }
-.vifte-tint-hot { background-image: radial-gradient(farthest-side at 10% 0, alpha(#de6a3a, 0.34), transparent); }
-.vifte-tint-emergency { background-image: radial-gradient(farthest-side at 10% 0, alpha(#e03c3c, 0.42), transparent); }
-
-.vifte-tile { padding: 12px 16px; }
-.vifte-tile-value { font-size: 30px; font-weight: 700; letter-spacing: -0.5px; font-feature-settings: "tnum"; }
-.vifte-tile-text { font-size: 18px; font-weight: 700; margin-top: 6px; }
-.vifte-chip { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px;
-  background-color: alpha(@window_fg_color, 0.1); }
-.vifte-dot { min-width: 7px; min-height: 7px; border-radius: 99px; background-color: @success_color; }
-.vifte-dot.warm { background-color: @warning_color; }
-.vifte-dot.hot, .vifte-dot.emergency { background-color: @error_color; }
-.vifte-dot.live { background-color: @accent_color; }
-.vifte-slim { padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 400;
-  box-shadow: inset 0 0 0 1px alpha(@window_fg_color, 0.1); }
-.vifte-card levelbar trough, .vifte-card levelbar block { min-height: 6px; border-radius: 99px; }
-
-.vifte-hero { padding: 13px 16px; border-radius: 14px;
-  background-image: linear-gradient(110deg, alpha(@success_color, 0.17), alpha(@window_fg_color, 0.04));
-  box-shadow: inset 0 0 0 1px alpha(@window_fg_color, 0.07); }
-.vifte-hero.warm { background-image: linear-gradient(110deg, alpha(@warning_color, 0.17), alpha(@window_fg_color, 0.04)); }
-.vifte-hero.live { background-image: linear-gradient(110deg, alpha(@accent_color, 0.17), alpha(@window_fg_color, 0.04)); }
-.vifte-missing { color: @error_color; }
-.vifte-hidden { opacity: 0.5; }
-.vifte-drop { box-shadow: inset 0 0 0 2px @accent_color; }
-banner.error > revealer > widget { background-color: @error_bg_color; color: @error_fg_color; }
-"""
+STYLE_CSS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.css")
 
 
 def parse_color(c):
@@ -156,6 +112,7 @@ class Tile(Gtk.Grid):
     """Felt i oversikten: ledetekst, status, stor verdi og en linje eller graf nederst."""
     def __init__(self, label, text=False):
         super().__init__(column_spacing=8, hexpand=True)
+        self.add_css_class("card")  # vanlig Adwaita-kort i høykontrast, glass ellers
         self.add_css_class("vifte-tile")
         lab = Gtk.Label(label=label, xalign=0, hexpand=True)
         lab.add_css_class("dim-label")
@@ -262,6 +219,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._history_at = 0.0
 
         self.toasts = Adw.ToastOverlay()
+        self.toasts.add_css_class("vifte-root")  # bærer bakgrunnen; fargetonen ligger på main_view oppå
         tv = Adw.ToolbarView()
         tv.add_css_class("vifte-main")
         self.main_view = tv
@@ -361,6 +319,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         style = Adw.StyleManager.get_default()
         style.connect("notify::dark", lambda *_a: self.apply_style_mode())
+        style.connect("notify::high-contrast", lambda *_a: self.apply_style_mode())
         self.apply_style_mode()
 
         bar = Adw.ViewSwitcherBar(stack=self.stack)
@@ -376,17 +335,20 @@ class MainWindow(Adw.ApplicationWindow):
         self._timer = GLib.timeout_add(1000, self.poll)
 
     def apply_style_mode(self):
-        if Adw.StyleManager.get_default().get_dark():
-            self.main_view.remove_css_class("vifte-light")
-        else:
-            self.main_view.add_css_class("vifte-light")
+        """Lys/mørk velger variant av glasset; i høykontrast er glasset av (vanlige Adwaita-kort)."""
+        sm = Adw.StyleManager.get_default()
+        for name, on in (("vifte-light", not sm.get_dark()), ("vifte-glass", not sm.get_high_contrast())):
+            if on:
+                self.toasts.add_css_class(name)
+            else:
+                self.toasts.remove_css_class(name)
 
     # ================================================================ oversikt og fargetone
     def build_overview(self):
         from ..i18n import get_setting
         self.tile_cpu, self.tile_gpu = Tile("CPU"), Tile("GPU")
         self.tile_fans, self.tile_safety = Tile(_("Vifter")), Tile(_("Sikkerhet"), text=True)
-        self.spark_cpu, self.spark_gpu = Sparkline(), Sparkline()
+        self.spark_cpu, self.spark_gpu = Sparkline(color="cpu"), Sparkline(color="gpu")
         self.tile_cpu.add_bottom(self.spark_cpu)
         self.tile_gpu.add_bottom(self.spark_gpu)
         self.fans_sub = Gtk.Label(xalign=0, ellipsize=3, margin_top=8)
@@ -421,7 +383,7 @@ class MainWindow(Adw.ApplicationWindow):
         temps = [v for v in (m.temp_value(self.auto_tray_sensor(k)) for k in ("cpu", "gpu")) if v is not None]
         emergency = bool((m.state.get("failsafe") or {}).get("active"))
         step = heat_step(max(temps) if temps else None, self._tint, emergency) \
-            if get_setting("tint_enabled", True) else None
+            if get_setting("tint_enabled", False) else None
         if step != self._tint:
             if self._tint:
                 self.main_view.remove_css_class(f"vifte-tint-{self._tint}")
@@ -1447,7 +1409,7 @@ class MainWindow(Adw.ApplicationWindow):
         g.add(combo_row(_("Tema"), [("system", _("Følg systemet")), ("light", _("Lyst")), ("dark", _("Mørkt"))],
                         self.theme_choice(), self.set_theme))
         from ..i18n import get_setting as setting
-        g.add(switch_row(_("Farge følger temperaturen"), setting("tint_enabled", True), self.set_tint,
+        g.add(switch_row(_("Farge følger temperaturen"), setting("tint_enabled", False), self.set_tint,
                          _("Svak fargetone i vinduet: kjølig ved tomgang, varm under last, rød i nødmodus")))
         g.add(switch_row(_("Vis oversikt"), setting("overview_enabled", True), self.set_overview,
                          _("CPU, GPU, vifter og sikkerhet øverst i vinduet")))
@@ -1838,8 +1800,14 @@ class App(Adw.Application):
         Adw.Application.do_startup(self)
         display = Gdk.Display.get_default()
         prov = Gtk.CssProvider()
-        prov.load_from_string(CSS)
+        prov.load_from_path(STYLE_CSS)
         Gtk.StyleContext.add_provider_for_display(display, prov, 800)
+        # fargetokens og aksent byttes når systemet går mellom lys og mørk modus
+        self.palette = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(display, self.palette, 800)
+        sm = Adw.StyleManager.get_default()
+        sm.connect("notify::dark", lambda *_a: self.apply_palette())
+        self.apply_palette()
         # ikonene følger med pakken, så de finnes også når programmet kjøres fra kildekoden
         Gtk.IconTheme.get_for_display(display).add_search_path(ICON_DIR)
         Gtk.Window.set_default_icon_name(APP_ID)
@@ -1854,6 +1822,12 @@ class App(Adw.Application):
         except Exception as ex:
             print("statusfelt utilgjengelig:", ex, file=sys.stderr)
             self.tray = None
+
+    def apply_palette(self):
+        css_vars = (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16)
+        self.palette.load_from_string(palette_css(Adw.StyleManager.get_default().get_dark(), css_vars))
+        if self.window:
+            self.window.queue_draw()
 
     def show_window(self):
         if self.window is None:

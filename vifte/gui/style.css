@@ -1,0 +1,71 @@
+/* Vifte – stil for hovedvinduet. Fargene @vifte_* kommer fra look.palette_css() og følger lys/mørk modus.
+   Bare @define-color, alpha() og mix(): var() og color-mix() krever nyere GTK enn 4.12. */
+
+.vifte-card { padding: 14px 16px; min-width: 260px; }
+.vifte-big { font-size: 30px; font-weight: 700; letter-spacing: -0.8px; font-feature-settings: "tnum"; }
+.vifte-sub { font-feature-settings: "tnum"; }
+
+/* ---- Glass: bare i hovedvinduet, og ikke i høykontrast (da mangler klassen vifte-glass).
+   Dialogene ligger utenfor og forblir rolige og ugjennomsiktige. Ingen uskarphet – GTK har ikke backdrop-filter. */
+.vifte-root.vifte-glass {
+  color: @vifte_text;
+  background-color: #0D1016;
+  background-image: radial-gradient(75% 65% at 88% -12%, alpha(#6080BE, 0.20), transparent 70%),
+                    radial-gradient(55% 45% at 0% 100%, alpha(#465A82, 0.12), transparent 70%),
+                    linear-gradient(165deg, #141821, #0D1016 55%, #090B10);
+}
+.vifte-root.vifte-glass.vifte-light {
+  background-color: #E8EBF0;
+  background-image: radial-gradient(75% 65% at 88% -12%, alpha(#7896CD, 0.22), transparent 70%),
+                    linear-gradient(165deg, #F2F4F8, #E8EBF0);
+}
+.vifte-glass headerbar { background: none; box-shadow: none; }
+.vifte-glass .dim-label { opacity: 1; color: @vifte_sub; }
+.vifte-glass separator { background-color: @vifte_line; }
+
+/* Fargetone etter temperatur (av som standard): et lag oppå den statiske bakgrunnen. */
+.vifte-glass .vifte-main { transition: background-image 1200ms ease; }
+.vifte-glass .vifte-main.vifte-tint-cool { background-image: radial-gradient(farthest-side at 10% 0, alpha(#4a8fd0, 0.30), transparent); }
+.vifte-glass .vifte-main.vifte-tint-mild { background-image: radial-gradient(farthest-side at 10% 0, alpha(#48a89a, 0.28), transparent); }
+.vifte-glass .vifte-main.vifte-tint-warm { background-image: radial-gradient(farthest-side at 10% 0, alpha(#d9a03a, 0.30), transparent); }
+.vifte-glass .vifte-main.vifte-tint-hot { background-image: radial-gradient(farthest-side at 10% 0, alpha(#de6a3a, 0.34), transparent); }
+.vifte-glass .vifte-main.vifte-tint-emergency { background-image: radial-gradient(farthest-side at 10% 0, alpha(#e03c3c, 0.42), transparent); }
+
+/* Kort: nøytrale, halvgjennomsiktige, tynn lys kant øverst. */
+.vifte-glass .vifte-card, .vifte-glass .vifte-tile {
+  background-color: @vifte_card; border-radius: 16px;
+  box-shadow: inset 0 1px alpha(white, 0.09), inset 0 0 0 1px alpha(white, 0.06), 0 12px 32px alpha(black, 0.35);
+}
+.vifte-glass.vifte-light .vifte-card, .vifte-glass.vifte-light .vifte-tile {
+  box-shadow: inset 0 1px alpha(white, 0.9), inset 0 0 0 1px alpha(white, 0.55), 0 10px 28px alpha(#1E283C, 0.10);
+}
+
+.vifte-tile { padding: 12px 16px; }
+.vifte-tile-value { font-size: 30px; font-weight: 700; letter-spacing: -0.8px; font-feature-settings: "tnum"; }
+.vifte-tile-text { font-size: 18px; font-weight: 700; margin-top: 6px; }
+.vifte-chip { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px;
+  background-color: alpha(@window_fg_color, 0.1); }
+.vifte-glass .vifte-chip { background-color: @vifte_fill; }
+.vifte-dot { min-width: 7px; min-height: 7px; border-radius: 99px; background-color: @vifte_calm; }
+.vifte-dot.warm { background-color: @vifte_warm; }
+.vifte-dot.hot { background-color: @vifte_hot; }
+.vifte-dot.emergency { background-color: @vifte_emergency; }
+.vifte-dot.live { background-color: @accent_bg_color; }
+.vifte-slim { padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 400;
+  box-shadow: inset 0 0 0 1px alpha(@window_fg_color, 0.1); }
+.vifte-glass .vifte-slim { box-shadow: none; background-color: @vifte_fill; }
+
+/* Stolper: 6 px, helt runde, nøytral fyllfarge. */
+.vifte-card levelbar trough, .vifte-card levelbar block { min-height: 6px; border-radius: 99px; }
+.vifte-glass .vifte-card levelbar block.filled { background-color: @vifte_neutral; }
+.vifte-glass .vifte-card levelbar block.empty { background-color: @vifte_track; }
+
+.vifte-hero { padding: 13px 16px; border-radius: 14px;
+  background-image: linear-gradient(110deg, alpha(@vifte_calm, 0.17), alpha(@window_fg_color, 0.04));
+  box-shadow: inset 0 0 0 1px alpha(@window_fg_color, 0.07); }
+.vifte-hero.warm { background-image: linear-gradient(110deg, alpha(@vifte_warm, 0.17), alpha(@window_fg_color, 0.04)); }
+.vifte-hero.live { background-image: linear-gradient(110deg, alpha(@accent_bg_color, 0.17), alpha(@window_fg_color, 0.04)); }
+.vifte-missing { color: @error_color; }
+.vifte-hidden { opacity: 0.5; }
+.vifte-drop { box-shadow: inset 0 0 0 2px @accent_color; }
+banner.error > revealer > widget { background-color: @error_bg_color; color: @error_fg_color; }

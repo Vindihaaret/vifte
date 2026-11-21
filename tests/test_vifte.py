@@ -890,6 +890,19 @@ class LookTests(unittest.TestCase):
         self.assertEqual(safety_state({**ok, "sensor_lost": {"controls": {"x": ["s"]}}}), "sensor_lost")
         self.assertEqual(safety_state({"failsafe": {"enabled": True, "active": True}}), "emergency")
 
+    def test_palette_has_the_same_tokens_in_light_and_dark(self):
+        from vifte.gui.look import PALETTE, STATUS_COLORS, palette_css
+        self.assertEqual(set(PALETTE["dark"]), set(PALETTE["light"]))
+        for dark in (True, False):
+            css = palette_css(dark)
+            for name in list(PALETTE["dark"]) + list(STATUS_COLORS) + ["accent_bg_color", "accent_fg_color"]:
+                self.assertIn(f"@define-color {name} ", css)
+            self.assertNotIn("var(", css)        # GTK 4.12 forstår ikke CSS-variabler
+            self.assertNotIn("--accent", css)
+        self.assertIn("@define-color accent_bg_color #F0A400;", palette_css(True))
+        self.assertIn("@define-color accent_bg_color #C47F00;", palette_css(False))
+        self.assertIn(":root { --accent-bg-color: #F0A400;", palette_css(True, css_vars=True))
+
 
 class PromptTests(unittest.TestCase):
     def test_every_language_has_the_whole_setup_prompt(self):
