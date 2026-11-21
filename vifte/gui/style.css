@@ -31,6 +31,31 @@
 .vifte-glass .vifte-main.vifte-tint-hot { background-image: radial-gradient(farthest-side at 10% 0, alpha(#de6a3a, 0.34), transparent); }
 .vifte-glass .vifte-main.vifte-tint-emergency { background-image: radial-gradient(farthest-side at 10% 0, alpha(#e03c3c, 0.42), transparent); }
 
+/* ---- Sidehode og sidefelt */
+.vifte-page-header { min-height: 72px; }
+.vifte-page-title { font-size: 26px; font-weight: 800; letter-spacing: -0.6px; }
+.vifte-page-subtitle { font-size: 13px; }
+.vifte-glass .vifte-main .sidebar-pane, .vifte-glass .vifte-main .content-pane,
+.vifte-glass .vifte-main navigation-view > * { background: none; }
+.vifte-glass .vifte-sidebar { background-color: @vifte_sidebar; box-shadow: inset -1px 0 @vifte_line; }
+.vifte-glass .vifte-main navigation-view .vifte-sidebar { box-shadow: none; }
+.vifte-nav { background: none; }
+.vifte-nav > row { min-height: 36px; padding: 0 10px; border-radius: 9px; }
+.vifte-glass .vifte-nav image { color: @vifte_sub; }
+.vifte-glass .vifte-nav > row:selected { background-color: @vifte_selected; }
+.vifte-glass .vifte-nav > row:selected image { color: @vifte_accent_text; }
+.vifte-nav > row:selected label { font-weight: 600; }
+.vifte-glass .vifte-config > button { background-color: @vifte_fill; }
+.vifte-config > button > box > label { font-weight: 600; }
+
+.vifte-status { padding: 10px 12px; border-radius: 12px; }
+.vifte-glass .vifte-status { background-color: @vifte_fill; }
+.vifte-status-title { font-size: 12.5px; font-weight: 700; }
+.vifte-status-icon { min-width: 26px; min-height: 26px; border-radius: 99px; color: white;
+  background-color: @vifte_calm; }
+.vifte-status-icon.warm { background-color: @vifte_warm; }
+.vifte-status-icon.emergency { background-color: @vifte_emergency; }
+
 /* Kort: nøytrale, halvgjennomsiktige, tynn lys kant øverst. */
 .vifte-glass .vifte-card, .vifte-glass .vifte-tile {
   background-color: @vifte_card; border-radius: 16px;

@@ -220,25 +220,36 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.toasts = Adw.ToastOverlay()
         self.toasts.add_css_class("vifte-root")  # bærer bakgrunnen; fargetonen ligger på main_view oppå
-        tv = Adw.ToolbarView()
-        tv.add_css_class("vifte-main")
-        self.main_view = tv
+        # sidefelt til venstre, sidene til høyre; kollapser til ett felt om gangen i smale vinduer
+        self.split = Adw.NavigationSplitView(min_sidebar_width=232, max_sidebar_width=232)
+        self.split.add_css_class("vifte-main")
+        self.main_view = self.split
         self._tint = None
-        self.toasts.set_child(tv)
+        self.toasts.set_child(self.split)
         self.set_content(self.toasts)
 
-        header = Adw.HeaderBar()
+        tv = Adw.ToolbarView()
+        header = Adw.HeaderBar(css_classes=["vifte-page-header"])
+        header.set_title_widget(Gtk.Box())   # tittelen står til venstre, som i sidehodet i designet
         tv.add_top_bar(header)
         self.stack = Adw.ViewStack()
-        switcher = Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE)
-        header.set_title_widget(switcher)
+        titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER, margin_start=8)
+        self.page_title = Gtk.Label(xalign=0, ellipsize=3, css_classes=["vifte-page-title"])
+        self.page_subtitle = Gtk.Label(xalign=0, ellipsize=3, css_classes=["vifte-page-subtitle", "dim-label"])
+        titles.append(self.page_title)
+        titles.append(self.page_subtitle)
+        header.pack_start(titles)
 
-        # venstre: profilvelger
-        self.profile_btn = Gtk.MenuButton(tooltip_text=_("Konfigurasjon (profil)"))
-        self.profile_btn.set_always_show_arrow(True)
-        header.pack_start(self.profile_btn)
+        self.profile_btn = Gtk.MenuButton(tooltip_text=_("Konfigurasjon (profil)"), hexpand=True,
+                                          css_classes=["vifte-config"])
+        # navnet til venstre og pilen til høyre, som i designet
+        self.profile_label = Gtk.Label(xalign=0, hexpand=True, ellipsize=3)
+        child = Gtk.Box(spacing=6)
+        child.append(self.profile_label)
+        child.append(Gtk.Image(icon_name="pan-down-symbolic"))
+        self.profile_btn.set_child(child)
 
-        # høyre: meny og lagre
+        # høyre: pause, meny og lagre
         menu = Gio.Menu()
         sec = Gio.Menu()
         sec.append(_("Importer FanControl-konfigurasjon …"), "win.import")
@@ -267,10 +278,15 @@ class MainWindow(Adw.ApplicationWindow):
         menu.append_section(None, sec)
         mb = Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Meny"))
         mb.connect("notify::active", lambda b, _p: b.get_active() and self.refresh_stress_menu())
-        header.pack_end(mb)
         self.save_btn = Gtk.Button(label=_("Lagre"), tooltip_text=_("Lagre konfigurasjonen (Ctrl+S)"))
         self.save_btn.connect("clicked", lambda *_: self.save())
+        self.pause_btn = Gtk.Button(action_name="win.pause", icon_name="media-playback-pause-symbolic",
+                                    tooltip_text=_("Pause styring"))
+        for b in (self.save_btn, mb, self.pause_btn):
+            b.set_valign(Gtk.Align.CENTER)   # hodet er 72 px høyt
         header.pack_end(self.save_btn)
+        header.pack_end(mb)
+        header.pack_end(self.pause_btn)
 
         for name, cb in (("import", self.import_config), ("export", self.export_config),
                          ("new-config", self.new_config), ("save-as", self.save_as),
@@ -304,10 +320,11 @@ class MainWindow(Adw.ApplicationWindow):
         tv.add_top_bar(self.progress)
 
         self.pages = {}
-        for key, title, icon in (("controls", _("Kontroller"), "preferences-system-symbolic"),
-                                 ("curves", _("Kurver"), "power-profile-performance-symbolic"),
-                                 ("speeds", _("Hastigheter"), "weather-windy-symbolic"),
-                                 ("sensors", _("Sensorer"), "temperature-symbolic")):
+        pages = (("controls", _("Kontroller"), "preferences-system-symbolic"),
+                 ("curves", _("Kurver"), "power-profile-performance-symbolic"),
+                 ("speeds", _("Hastigheter"), "weather-windy-symbolic"),
+                 ("sensors", _("Sensorer"), "temperature-symbolic"))
+        for key, title, icon in pages:
             sec = Section()
             self.pages[key] = sec
             self.stack.add_titled_with_icon(sec, key, title, icon)
@@ -316,17 +333,19 @@ class MainWindow(Adw.ApplicationWindow):
         self.stack.set_vexpand(True)
         content.append(self.stack)
         tv.set_content(content)
+        self.content_page = Adw.NavigationPage(title=pages[0][1], tag="content", child=tv)
+        self.split.set_content(self.content_page)
+        self.split.set_sidebar(Adw.NavigationPage(title="Vifte", tag="sidebar", child=self.build_sidebar(pages)))
+        self.stack.connect("notify::visible-child-name", lambda *_a: self.page_changed())
+        self.page_changed()
 
         style = Adw.StyleManager.get_default()
         style.connect("notify::dark", lambda *_a: self.apply_style_mode())
         style.connect("notify::high-contrast", lambda *_a: self.apply_style_mode())
         self.apply_style_mode()
 
-        bar = Adw.ViewSwitcherBar(stack=self.stack)
-        tv.add_bottom_bar(bar)
         bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 700sp"))
-        bp.add_setter(bar, "reveal", True)
-        bp.add_setter(switcher, "visible", False)
+        bp.add_setter(self.split, "collapsed", True)
         bp.add_setter(self.overview, "visible", False)
         self.add_breakpoint(bp)
 
@@ -342,6 +361,111 @@ class MainWindow(Adw.ApplicationWindow):
                 self.toasts.add_css_class(name)
             else:
                 self.toasts.remove_css_class(name)
+
+    # ================================================================ sidefelt og sidehode
+    def build_sidebar(self, pages):
+        """App-navn, konfigurasjonsvelger, sidene, statuskort og Innstillinger."""
+        tv = Adw.ToolbarView(css_classes=["vifte-sidebar"])
+        header = Adw.HeaderBar(css_classes=["vifte-page-header"])
+        header.set_title_widget(Gtk.Box())
+        brand = Gtk.Box(spacing=10, margin_start=4)
+        brand.append(Gtk.Image(icon_name="no.vifte.Vifte", pixel_size=36))
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        names.append(Gtk.Label(label="Vifte", xalign=0, css_classes=["heading"]))
+        names.append(Gtk.Label(label="FanControl for Linux", xalign=0, css_classes=["caption", "dim-label"]))
+        brand.append(names)
+        header.pack_start(brand)
+        tv.add_top_bar(header)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=10, margin_end=10, margin_bottom=12)
+        box.append(Gtk.Label(label=_("Konfigurasjon"), xalign=0, margin_start=6, margin_bottom=6,
+                             css_classes=["caption-heading", "dim-label"]))
+        box.append(self.profile_btn)
+
+        self.nav = Gtk.ListBox(css_classes=["navigation-sidebar", "vifte-nav"], margin_top=12)
+        self.nav_rows = {}
+        for key, title, icon in pages:
+            row_box = Gtk.Box(spacing=12)
+            row_box.append(Gtk.Image(icon_name=icon))
+            row_box.append(Gtk.Label(label=title, xalign=0))
+            row = Gtk.ListBoxRow(child=row_box)
+            row.key = key
+            self.nav_rows[key] = row
+            self.nav.append(row)
+        self.nav.connect("row-activated", lambda _l, row: self.show_page(row.key))
+        box.append(self.nav)
+        box.append(Gtk.Box(vexpand=True))
+
+        # statuskort: det viktigste om sikkerheten; klikk åpner Innstillinger › Sikkerhet
+        self.status_btn = Gtk.Button(css_classes=["vifte-status"], margin_bottom=6)
+        status = Gtk.Box(spacing=10)
+        self.status_icon = Gtk.Image(icon_name="emblem-ok-symbolic", valign=Gtk.Align.CENTER,
+                                     css_classes=["vifte-status-icon"])
+        status.append(self.status_icon)
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.status_title = Gtk.Label(xalign=0, ellipsize=3, css_classes=["vifte-status-title"])
+        self.status_text = Gtk.Label(xalign=0, ellipsize=3, css_classes=["caption", "dim-label"])
+        texts.append(self.status_title)
+        texts.append(self.status_text)
+        status.append(texts)
+        self.status_btn.set_child(status)
+        self.status_btn.connect("clicked", lambda *_a: self.settings("safety"))
+        box.append(self.status_btn)
+
+        settings = Gtk.ListBox(css_classes=["navigation-sidebar", "vifte-nav"], selection_mode=Gtk.SelectionMode.NONE)
+        row_box = Gtk.Box(spacing=12)
+        row_box.append(Gtk.Image(icon_name="emblem-system-symbolic"))
+        row_box.append(Gtk.Label(label=_("Innstillinger"), xalign=0))
+        settings.append(Gtk.ListBoxRow(child=row_box))
+        settings.connect("row-activated", lambda *_a: self.settings())
+        box.append(settings)
+        tv.set_content(box)
+        return tv
+
+    def show_page(self, key):
+        self.stack.set_visible_child_name(key)
+        self.split.set_show_content(True)
+
+    def page_changed(self):
+        """Markeringen i sidefeltet og sidehodet følger siden, også når koden bytter side."""
+        key = self.stack.get_visible_child_name()
+        row = self.nav_rows.get(key)
+        if row is not None and self.nav.get_selected_row() is not row:
+            self.nav.select_row(row)
+        title = self.stack.get_page(self.pages[key]).get_title() if key in self.pages else ""
+        self.page_title.set_label(title)
+        self.content_page.set_title(title)
+        self.update_page_subtitle()
+
+    def update_page_subtitle(self):
+        m, key = self.model, self.stack.get_visible_child_name()
+        cfg = m.cfg
+        if key == "controls":
+            _avg, fans, _pumps = fan_summary(m.state.get("control_state") or {})
+            text = _("{} vifter · {} styrt av Vifte").format(len([e for e in cfg.controls if self.visible(e)]),
+                                                             fans)
+        elif key == "curves":
+            used = {(e.get("SelectedFanCurve") or {}).get("Name") for e in cfg.controls if e.get("Enable")}
+            used.discard(None)
+            text = _("{} kurver · {} i bruk").format(len(cfg.curves), len(used))
+        elif key == "speeds":
+            text = _("Turtall fra alle viftesensorer")
+        else:
+            text = _("Historikk for siste 30 minutter")
+        self.page_subtitle.set_label(text)
+
+    def update_sidebar_status(self):
+        st = self.model.state
+        state = safety_state(st)
+        _avg, fans, _pumps = fan_summary(st.get("control_state") or {})
+        self.status_title.set_label({"emergency": _("Nødmodus"), "sensor_lost": _("Sensor borte"),
+                                     "paused": _("Styring på pause"), "ok": _("Alt i orden"),
+                                     "no_emergency": _("Nødmodus av")}[state])
+        self.status_text.set_label(_("Tjenesten styrer {} vifter").format(fans))
+        self.status_icon.set_from_icon_name({"ok": "emblem-ok-symbolic", "paused": "media-playback-pause-symbolic"}
+                                            .get(state, "dialog-warning-symbolic"))
+        level = {"ok": "calm", "emergency": "emergency"}.get(state, "warm")
+        self.status_icon.set_css_classes(["vifte-status-icon", level])
 
     # ================================================================ oversikt og fargetone
     def build_overview(self):
@@ -564,11 +688,15 @@ class MainWindow(Adw.ApplicationWindow):
         m = self.model
         name = m.name[:-5] if m.name.endswith(".json") else m.name
         dirty = m.state.get("dirty")
-        self.profile_btn.set_label(name + (" •" if dirty else ""))
+        self.profile_label.set_label(name + (" •" if dirty else ""))
         if dirty:
             self.save_btn.add_css_class("suggested-action")
         else:
             self.save_btn.remove_css_class("suggested-action")
+        paused = bool(m.state.get("paused"))
+        self.pause_btn.set_icon_name("media-playback-start-symbolic" if paused else "media-playback-pause-symbolic")
+        self.pause_btn.set_tooltip_text(_("Fortsett styring") if paused else _("Pause styring"))
+        self.update_page_subtitle()
 
     def visible(self, entry):
         return self.model.show_hidden or not entry.get("IsHidden")
@@ -982,6 +1110,7 @@ class MainWindow(Adw.ApplicationWindow):
         st = self.model.state
         self.update_tint()
         self.update_overview()
+        self.update_sidebar_status()
         for u in self.updaters:
             try:
                 u()
@@ -1377,7 +1506,8 @@ class MainWindow(Adw.ApplicationWindow):
         act.set_state(GLib.Variant.new_boolean(v))
         self.call("settings", paused=v)
 
-    def settings(self):
+    def settings(self, tab=None):
+        """tab: «safety» åpner fanen Sikkerhet (fra statuskortet i sidefeltet)."""
         dlg = Adw.PreferencesDialog(title=_("Innstillinger"))
         # Faner: Generelt, Sikkerhet (nødmodus, sensortap, varsler) og Claude
         page = Adw.PreferencesPage(title=_("Generelt"), icon_name="preferences-system-symbolic")
@@ -1440,6 +1570,8 @@ class MainWindow(Adw.ApplicationWindow):
             btn.connect("clicked", lambda *_a: (dlg.close(), self.uninstall()))
             row.add_suffix(btn)
             g.add(row)
+        if tab == "safety":
+            dlg.set_visible_page(safety_page)
         dlg.present(self)
 
     def build_mcp_settings(self, page):
@@ -1683,7 +1815,7 @@ class MainWindow(Adw.ApplicationWindow):
                 prefs = row.get_ancestor(Adw.PreferencesDialog) if row is not None else None
                 if prefs is not None:
                     prefs.close()
-                self.stack.set_visible_child_name("controls")
+                self.show_page("controls")
                 if not self.model.show_hidden:
                     self.activate_action("win.show-hidden", None)   # pumper er ofte skjult
                 self.toast(_("Trykk på tannhjulet på pumpens kort og velg Type → Pumpe"))
@@ -1772,6 +1904,7 @@ class MainWindow(Adw.ApplicationWindow):
     def apply_view(self):
         hide = bool(self.model.cfg.window.get("HideFanSpeedCards"))
         self.stack.get_page(self.pages["speeds"]).set_visible(not hide)
+        self.nav_rows["speeds"].set_visible(not hide)
         self.config_changed(False)
 
     def about(self):

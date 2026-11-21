@@ -437,4 +437,13 @@ T = {
         "die Konfiguration wurde während der Kalibrierung gewechselt",
     "the configuration was changed elsewhere – try again":
         "die Konfiguration wurde an anderer Stelle geändert – bitte erneut versuchen",
+    # --- sidefelt og sidehode (redesign)
+    "Configuration": "Konfiguration",
+    "The service controls {} fans": "Der Dienst steuert {} Lüfter",
+    "{} fans · {} controlled by Vifte": "{} Lüfter · {} von Vifte gesteuert",
+    "{} curves · {} in use": "{} Kurven · {} in Verwendung",
+    "Speeds from all fan sensors": "Drehzahlen aller Lüftersensoren",
+    "History for the last 30 minutes": "Verlauf der letzten 30 Minuten",
+    "Pause control": "Steuerung pausieren",
+    "Resume control": "Steuerung fortsetzen",
 }
