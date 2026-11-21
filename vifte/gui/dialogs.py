@@ -9,7 +9,7 @@ from ..config import (CURVE_TITLES, MIX_FUNCTIONS, SENSOR_TYPES, calibration_poi
                       custom_sensor_type, format_point, hysteresis, parse_point, set_hysteresis)
 from ..i18n import _  # noqa: E402
 from ..prompts import setup_prompt  # noqa: E402
-from .common import StatusHero, combo_row, entry_row, spin_row, switch_row  # noqa: E402
+from .common import combo_row, entry_row, spin_row, switch_row  # noqa: E402
 from .graph import CurveGraph  # noqa: E402
 from .look import clamp_point  # noqa: E402
 
