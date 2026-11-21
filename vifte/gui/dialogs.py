@@ -11,6 +11,7 @@ from ..i18n import _  # noqa: E402
 from ..prompts import setup_prompt  # noqa: E402
 from .common import StatusHero, combo_row, entry_row, spin_row, switch_row  # noqa: E402
 from .graph import CurveGraph  # noqa: E402
+from .look import clamp_point  # noqa: E402
 
 
 class LiveDialog(Adw.PreferencesDialog):
@@ -218,12 +219,33 @@ class ControlDialog(LiveDialog):
 
 # ======================================================================= kurver
 
-class CurveDialog(LiveDialog):
+class CurveEditor(Gtk.Box):
+    """Detaljen på Kurver-siden: navn, nåverdi, skjema for kurvetypen og (for Graf) den store
+    grafen med redigerbare punktmerker. Bygget fra den tidligere kurvedialogen; feltene og hvordan
+    de lagres er de samme."""
+
     def __init__(self, win, name):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.win = win
+        self.model = win.model
         self.name = name
-        super().__init__(win, name)
         self.graph = None
+        self.pills = []
+        # oppdateres hvert sekund sammen med resten av vinduet, så lenge den vises
+        self.connect("map", lambda *_: win.live_dialogs.add(self))
+        self.connect("unmap", lambda *_: win.live_dialogs.discard(self))
         self.build()
+
+    def add(self, widget):
+        """Byggefunksjonene legger til grupper med add(), som i en PreferencesPage."""
+        self.append(widget)
+
+    def changed(self, rebuild_cards=True):
+        if rebuild_cards:
+            # siden (og denne detaljen) bygges på nytt; vent til knappen eller listen som kalte er ferdig
+            GLib.idle_add(lambda: self.win.config_changed(True) and False)
+        else:
+            self.win.config_changed(False)
 
     def curve(self):
         return self.model.cfg.curve(self.name) or {}
@@ -240,22 +262,31 @@ class CurveDialog(LiveDialog):
             return
         self.model.cfg.rename_curve(self.name, new)
         self.name = new
-        self.set_title(new)
+        self.win.curve_selected = new
         self.changed(True)
 
     def build(self):
         c = self.curve()
         kind = curve_type(c)
         cfg = self.model.cfg
-        page = Adw.PreferencesPage()
-        self.add(page)
-        top = Adw.PreferencesGroup()
-        page.add(top)
-        self.hero = StatusHero()
-        top.add(self.hero)
-        g = Adw.PreferencesGroup(title=_("{}-kurve").format(_(CURVE_TITLES[kind])))
-        page.add(g)
-        g.add(entry_row(_("Navn"), self.name, self.rename))
+        # topp: navn med blyant, typen (kan ikke endres) og nåverdien
+        head = Gtk.Box(spacing=8)
+        head.append(Gtk.Label(label=self.name, xalign=0, ellipsize=3, css_classes=["vifte-detail-title"]))
+        pen = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                         tooltip_text=_("Gi nytt navn"))
+        pen.connect("clicked", lambda *_a: RenameDialog.ask(self.win, _("Nytt navn"), self.name, self.rename))
+        head.append(pen)
+        head.append(Gtk.Box(hexpand=True))
+        head.append(Gtk.Label(label=_(CURVE_TITLES[kind]), valign=Gtk.Align.CENTER, css_classes=["vifte-type-badge"]))
+        top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        top.append(head)
+        self.now = Gtk.Label(xalign=0, ellipsize=3, use_markup=True, css_classes=["dim-label", "vifte-sub"])
+        top.append(self.now)
+        self.append(top)
+
+        g = Adw.PreferencesGroup()
+        rows = "SelectedTempSource" in c or (cfg.is_new_format and kind in (
+            "graph", "linear", "flat", "mix", "trigger", "auto", "sync"))
         if "SelectedTempSource" in c:
             g.add(combo_row(_("Temperaturkilde"), self.model.temp_choices(),
                             (c.get("SelectedTempSource") or {}).get("Identifier"),
@@ -265,19 +296,17 @@ class CurveDialog(LiveDialog):
         if cfg.is_new_format and kind in ("graph", "linear", "flat", "mix", "trigger", "auto", "sync"):
             g.add(combo_row(_("Utdata"), [(0, _("Prosent (%)")), (1, _("RPM (krever kalibrering)"))],
                             int(c.get("CommandMode", 0) or 0), self.set_mode))
-
-        getattr(self, f"build_{kind}", self.build_unknown)(page, c)
+        if rows:
+            self.append(g)
 
         if kind in ("graph", "linear"):
-            self.build_hysteresis(page, c)
+            self.build_hysteresis(self, c)
+        getattr(self, f"build_{kind}", self.build_unknown)(self, c)
 
-        g = Adw.PreferencesGroup()
-        page.add(g)
-        btn = Gtk.Button(label=_("Slett kurve"), halign=Gtk.Align.CENTER)
+        btn = Gtk.Button(label=_("Slett kurve"), halign=Gtk.Align.START, margin_top=4)
         btn.add_css_class("destructive-action")
-        btn.add_css_class("pill")
         btn.connect("clicked", self.delete)
-        g.add(btn)
+        self.append(btn)
 
     def set_mode(self, mode):
         c = self.curve()
@@ -288,13 +317,17 @@ class CurveDialog(LiveDialog):
             self.graph.y_range = (0, float(c.get("MaximumCommand", 100)))
             self.graph.y_unit = "%" if mode == 0 else " RPM"
             self.graph.queue_draw()
+            self.fill_pills()
         self.changed(False)
 
-    # ---- graf
+    # ---- graf med redigerbare punktmerker
     def build_graph(self, page, c):
-        g = Adw.PreferencesGroup(title=_("Kurve"),
-                                 description=_("Venstreklikk: legg til / dra punkt · Høyreklikk: fjern punkt"))
-        page.add(g)
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["card", "vifte-card"])
+        head = Gtk.Box(spacing=8)
+        head.append(Gtk.Label(label=_("Kurve"), xalign=0, hexpand=True, css_classes=["heading"]))
+        head.append(Gtk.Label(label=_("Venstreklikk: legg til / dra punkt · Høyreklikk: fjern punkt"),
+                              ellipsize=3, css_classes=["caption", "dim-label"]))
+        card.append(head)
         self.graph = CurveGraph(editable=True, height=300)
         self.graph.fahrenheit = self.model.fahrenheit
         self.graph.points = sorted(parse_point(p) for p in c.get("Points") or [])
@@ -304,34 +337,28 @@ class CurveDialog(LiveDialog):
         mode = int(c.get("CommandMode", 0) or 0)
         self.graph.y_range = (0, float(c.get("MaximumCommand", 100) or 100))
         self.graph.y_unit = "%" if mode == 0 else " RPM"
-        self.graph.on_changed = self.points_changed
-        self.graph.on_select = self.point_selected
-        g.add(self.graph)
-
-        # Punktene som merkelapper: klikk for å velge et punkt og justere det under grafen.
-        self.pt_chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=8,
-                                    column_spacing=6, row_spacing=6, margin_top=8)
-        g.add(self.pt_chips)
-        box = Gtk.Box(spacing=12, halign=Gtk.Align.CENTER, margin_top=8)
-        self.pt_t = Gtk.SpinButton.new_with_range(-50, 200, 1)
-        self.pt_v = Gtk.SpinButton.new_with_range(0, 100000, 1)
-        for sb in (self.pt_t, self.pt_v):
-            sb.set_digits(1)
-            sb.set_width_chars(7)
-        for lab, w in ((_("Temperatur °C"), self.pt_t), (_("Verdi"), self.pt_v)):
-            box.append(Gtk.Label(label=lab))
-            box.append(w)
-        self.pt_box = box   # vises bare når et punkt er valgt
-        self._pt_lock = False
-        self.pt_t.connect("value-changed", self.point_edited)
-        self.pt_v.connect("value-changed", self.point_edited)
-        g.add(box)
-        self.point_selected(None)
-
-        g = Adw.PreferencesGroup(title=_("Akse"))
-        page.add(g)
-        g.add(spin_row(_("Minimum temperatur"), self.graph.x_range[0], -50, 200, 1, lambda v: self.axis(0, v)))
-        g.add(spin_row(_("Maksimum temperatur"), self.graph.x_range[1], -50, 250, 1, lambda v: self.axis(1, v)))
+        self.graph.on_changed = self.graph_changed
+        self.graph.on_select = self.graph_selected
+        card.append(self.graph)
+        # punktene som merker med to tallfelt hver: °C → %
+        self.pill_box = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=8,
+                                    column_spacing=8, row_spacing=8, homogeneous=False)
+        card.append(self.pill_box)
+        foot = Gtk.Box(spacing=8, margin_top=4, css_classes=["vifte-graph-foot"])
+        foot.append(Gtk.Label(label=_("Skriv inn verdier i punktene, eller dra dem i grafen"), xalign=0, hexpand=True,
+                              wrap=True, css_classes=["caption", "dim-label"]))
+        foot.append(Gtk.Label(label=_("Temperaturakse"), css_classes=["caption", "dim-label"]))
+        for which in (0, 1):
+            sb = Gtk.SpinButton.new_with_range(-50, 250, 5)
+            sb.set_value(self.graph.x_range[which])
+            sb.set_valign(Gtk.Align.CENTER)
+            sb.connect("value-changed", lambda s, w=which: self.axis(w, s.get_value()))
+            foot.append(sb)
+            if which == 0:
+                foot.append(Gtk.Label(label="–", css_classes=["dim-label"]))
+        card.append(foot)
+        self.append(card)
+        self.fill_pills()
 
     def axis(self, which, v):
         c = self.curve()
@@ -347,41 +374,92 @@ class CurveDialog(LiveDialog):
         self.curve()["Points"] = [format_point(x, y) for x, y in sorted(pts)]
         self.changed(False)
 
-    def fill_point_chips(self):
-        while (c := self.pt_chips.get_first_child()):
-            self.pt_chips.remove(c)
-        for n, (x, y) in enumerate(self.graph.points):
-            chip = Gtk.Button(label=f"{self.graph._fmt_x(x)} → {y:.0f}{self.graph.y_unit}")
-            chip.add_css_class("vifte-slim")
-            chip.add_css_class("suggested-action" if n == self.graph.selected else "flat")
-            chip.connect("clicked", self.select_point, n)
-            self.pt_chips.append(chip)
+    def _to_display(self, t):
+        return t * 9 / 5 + 32 if self.model.fahrenheit else t
 
-    def select_point(self, _b, i):
+    def _from_display(self, t):
+        return (t - 32) * 5 / 9 if self.model.fahrenheit else t
+
+    def fill_pills(self):
+        """Bygger merkene på nytt (når antallet punkter endres eller enheten byttes)."""
+        while (c := self.pill_box.get_first_child()):
+            self.pill_box.remove(c)
+        self.pills = []
+        unit_t = "°F" if self.model.fahrenheit else "°C"
+        unit_v = self.graph.y_unit.strip()
+        for i in range(len(self.graph.points)):
+            pill = Gtk.Box(spacing=4, css_classes=["vifte-pill"])
+            t = Gtk.Entry(width_chars=4, max_width_chars=5, xalign=1, css_classes=["vifte-pill-entry"])
+            v = Gtk.Entry(width_chars=4, max_width_chars=6, xalign=1, css_classes=["vifte-pill-entry"])
+            pill.append(t)
+            pill.append(Gtk.Label(label=f"{unit_t} →", css_classes=["dim-label", "caption"]))
+            pill.append(v)
+            pill.append(Gtk.Label(label=unit_v, css_classes=["dim-label", "caption"]))
+            for e in (t, v):
+                e.connect("changed", lambda _e, n=i: self.pill_edited(n, final=False))
+                e.connect("activate", lambda _e, n=i: self.pill_edited(n, final=True))
+                focus = Gtk.EventControllerFocus()
+                focus.connect("enter", lambda _c, n=i: self.select_point(n))
+                focus.connect("leave", lambda _c, n=i: self.pill_edited(n, final=True))
+                e.add_controller(focus)
+            pill.set_halign(Gtk.Align.START)   # kompakte merker, ikke strukket ut over linjen
+            self.pill_box.append(pill)
+            pill.get_parent().set_focusable(False)
+            self.pills.append((pill, t, v))
+        self.update_pills()
+
+    def update_pills(self, skip_focused=False):
+        """Skriver punktenes verdier inn i merkene og markerer det valgte."""
+        self._pill_lock = True
+        for i, (pill, t, v) in enumerate(self.pills):
+            if i >= len(self.graph.points):
+                break
+            x, y = self.graph.points[i]
+            for entry, text in ((t, f"{self._to_display(x):.0f}"), (v, f"{y:.0f}")):
+                if not (skip_focused and entry.has_focus()) and entry.get_text() != text:
+                    entry.set_text(text)
+            if i == self.graph.selected:
+                pill.add_css_class("selected")
+            else:
+                pill.remove_css_class("selected")
+        self._pill_lock = False
+
+    def select_point(self, i):
         self.graph.selected = i
         self.graph.queue_draw()
-        self.point_selected(i)
+        self.update_pills(skip_focused=True)
 
-    def point_selected(self, i):
-        self.fill_point_chips()
-        sens = i is not None and i < len(self.graph.points)
-        self.pt_box.set_visible(sens)
-        if sens:
-            self._pt_lock = True
-            self.pt_t.set_value(self.graph.points[i][0])
-            self.pt_v.set_value(self.graph.points[i][1])
-            self._pt_lock = False
-
-    def point_edited(self, *_):
-        i = self.graph.selected
-        if self._pt_lock or i is None or i >= len(self.graph.points):
+    def pill_edited(self, i, final):
+        """Grafen følger med mens du skriver; Enter, Tab eller klikk utenfor skriver tallet pent."""
+        if getattr(self, "_pill_lock", False) or i >= len(self.pills) or i >= len(self.graph.points):
             return
-        self.graph.points[i] = (self.pt_t.get_value(), self.pt_v.get_value())
-        self.graph.points.sort()
-        self.graph.selected = self.graph.points.index((self.pt_t.get_value(), self.pt_v.get_value()))
-        self.graph.queue_draw()
-        self.fill_point_chips()
-        self.points_changed(self.graph.points)
+        _pill, t, v = self.pills[i]
+        try:
+            temp = self._from_display(float(t.get_text().replace(",", ".")))
+            value = float(v.get_text().replace(",", "."))
+        except ValueError:
+            if final:
+                self.update_pills()
+            return
+        temp, value = clamp_point(self.graph.points, i, temp, value, self.graph.y_range[1])
+        if (temp, value) != tuple(self.graph.points[i]):
+            self.graph.points[i] = (temp, value)
+            self.graph.selected = i
+            self.graph.queue_draw()
+            self.points_changed(self.graph.points)
+        if final:
+            self.update_pills()
+
+    def graph_changed(self, pts):
+        """Punkt lagt til, flyttet eller fjernet i grafen."""
+        self.points_changed(pts)
+        if len(self.pills) != len(self.graph.points):
+            self.fill_pills()
+        else:
+            self.update_pills()
+
+    def graph_selected(self, i):
+        self.update_pills()
 
     # ---- lineær
     def build_linear(self, page, c):
@@ -528,21 +606,25 @@ class CurveDialog(LiveDialog):
         def resp(_d, r):
             if r == "delete":
                 self.model.cfg.delete_curve(self.name)
+                self.win.curve_selected = None
                 self.changed(True)
-                self.close()
         dlg.connect("response", resp)
-        dlg.present(self)
+        dlg.present(self.win)
 
     def update_live(self):
         st = (self.model.state.get("curves") or {}).get(self.name) or {}
         v, t = st.get("value"), st.get("input")
         mode = int(self.curve().get("CommandMode", 0) or 0)
         unit = " RPM" if mode == 1 else " %"
-        parts = []
-        if t is not None:
-            parts.append(self.model.fmt_temp(t))
-        parts.append("–" if v is None else f"{v:.0f}{unit}")
-        self.hero.set_status("  →  ".join(parts) or "–", _("Nå"), "live")
+        users = [x.get("NickName") or x.get("Name") or x.get("Identifier") for x in self.model.cfg.controls
+                 if (x.get("SelectedFanCurve") or {}).get("Name") == self.name and x.get("Enable")]
+        parts = [_("Nå") + ": " + (GLib.markup_escape_text(self.model.fmt_temp(t)) + " " if t is not None else "") +
+                 "<span foreground='" + self.win.accent_text() + "'>→ " + ("–" if v is None else f"{v:.0f}{unit}") +
+                 "</span>"]
+        parts.append(GLib.markup_escape_text(_("brukes av {}").format(", ".join(users)) if users else _("ikke i bruk")))
+        if st.get("error"):
+            parts.append(GLib.markup_escape_text(st["error"]))
+        self.now.set_markup(" · ".join(parts))
         if self.graph:
             self.graph.marker = (t, v)
             self.graph.queue_draw()

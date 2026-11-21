@@ -133,6 +133,17 @@ def group_kind(ids):
     return "other"
 
 
+def clamp_point(points, i, temp, value, value_max=100.0):
+    """Ny verdi for punkt i i en sortert kurve, redigert i punktmerkene (beslutning 12):
+    temperaturen holdes mellom nabopunktene, så punktene ikke bytter rekkefølge, og verdien
+    mellom 0 og value_max (100 % eller maks RPM)."""
+    if i > 0:
+        temp = max(temp, points[i - 1][0])
+    if i < len(points) - 1:
+        temp = min(temp, points[i + 1][0])
+    return temp, min(max(value, 0.0), value_max)
+
+
 def heat_step(temp, previous=None, emergency=False):
     """Fargetonen for vinduet. Går ned først når temperaturen er HEAT_MARGIN under grensen."""
     if emergency:

@@ -467,4 +467,10 @@ T = {
     "{} % if a curve's sensor disappears": "{} % si le capteur d'une courbe disparaît",
     # --- listerader (redesign)
     "Details": "Détails",
+    # --- Kurver (redesign)
+    "Search curves": "Rechercher des courbes",
+    "used by {}": "utilisée par {}",
+    "not in use": "non utilisée",
+    "Type values into the points, or drag them in the graph": "Saisissez les valeurs dans les points ou faites-les glisser dans le graphique",
+    "Temperature axis": "Axe des températures",
 }

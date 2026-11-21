@@ -935,6 +935,16 @@ class LookTests(unittest.TestCase):
         self.assertEqual([x["id"] for x in disk_selection(d, {})], ["/nvme/0/temperature/0"])
         self.assertEqual(disk_selection([], values), [])
 
+    def test_clamp_point_keeps_order_and_range(self):
+        from vifte.gui.look import clamp_point
+        pts = [(40, 20), (60, 40), (80, 80)]
+        self.assertEqual(clamp_point(pts, 1, 70, 50), (70, 50))
+        self.assertEqual(clamp_point(pts, 1, 95, 50), (80, 50))     # ikke forbi neste punkt
+        self.assertEqual(clamp_point(pts, 1, 10, 50), (40, 50))     # ikke forbi forrige punkt
+        self.assertEqual(clamp_point(pts, 0, -5, -3), (-5, 0))      # første punkt: bare nabo til høyre
+        self.assertEqual(clamp_point(pts, 2, 120, 140), (120, 100))
+        self.assertEqual(clamp_point(pts, 2, 120, 2400, 2000), (120, 2000))   # RPM-modus
+
     def test_group_kind(self):
         from vifte.gui.look import group_kind
         self.assertEqual(group_kind(["/amdcpu/0/temperature/2", "/amdcpu/0/temperature/3"]), "cpu")

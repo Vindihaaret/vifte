@@ -403,3 +403,37 @@ class HistoryGraph(Gtk.DrawingArea):
                 cr.stroke()
             if keep and keep[-1] < len(series) and series[keep[-1]] is not None:
                 _end_dot(cr, *px(self.t[keep[-1]], series[keep[-1]]), color, 3.5)
+
+
+class MiniCurve(Gtk.DrawingArea):
+    """Liten tegning av kurveformen i kurvelisten. points: [(temp, verdi)] eller tom (ingen tegning)."""
+
+    def __init__(self, width=56, height=28):
+        super().__init__()
+        self.points = []
+        self.x_range = (20.0, 100.0)
+        self.y_range = (0.0, 100.0)
+        self.active = False   # valgt rad: aksentfarge
+        self.set_content_width(width)
+        self.set_content_height(height)
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_draw_func(self._draw)
+
+    def _draw(self, area, cr, w, h):
+        if not self.points:
+            return
+        (x0, x1), (y0, y1) = self.x_range, self.y_range
+
+        def xy(x, y):
+            return ((min(max(x, x0), x1) - x0) / ((x1 - x0) or 1) * (w - 2) + 1,
+                    h - 2 - (min(max(y, y0), y1) - y0) / ((y1 - y0) or 1) * (h - 4))
+        color = _color(self, "accent_color" if self.active else "vifte_sub", (0.6, 0.6, 0.65, 1))
+        pts = sorted(self.points)
+        cr.move_to(*xy(x0, pts[0][1]))
+        for x, y in pts:
+            cr.line_to(*xy(x, y))
+        cr.line_to(*xy(x1, pts[-1][1]))
+        cr.set_source_rgba(color.red, color.green, color.blue, 1)
+        cr.set_line_width(2)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.stroke()

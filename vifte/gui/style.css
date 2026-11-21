@@ -103,6 +103,24 @@
 .vifte-glass .vifte-list > row:hover { background-color: alpha(currentColor, 0.03); }
 .vifte-glass .vifte-list .vifte-hidden { opacity: 0.5; }
 
+/* ---- Kurver (liste + detalj) */
+.vifte-curve-list { background: none; }
+.vifte-curve-list > row { padding: 8px 10px; margin: 1px 0; border-radius: 10px; }
+.vifte-glass .vifte-curve-list > row:hover { background-color: @vifte_fill; }
+.vifte-glass .vifte-curve-list > row:selected { background-color: @vifte_selected; color: inherit; }
+.vifte-glass .vifte-curves-sep { background-color: @vifte_line; }
+.vifte-detail-title { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+.vifte-type-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px;
+  background-color: alpha(currentColor, 0.1); }
+.vifte-glass .vifte-type-badge { background-color: @vifte_fill; }
+.vifte-pill { padding: 0 10px; border-radius: 99px; background-color: alpha(currentColor, 0.08); }
+.vifte-glass .vifte-pill { background-color: @vifte_fill; }
+.vifte-pill.selected { box-shadow: inset 0 0 0 1.5px @accent_bg_color; }
+.vifte-pill-entry { min-height: 30px; padding: 0 2px; background: none; box-shadow: none; outline: none;
+  font-weight: 700; font-feature-settings: "tnum"; }
+.vifte-graph-foot { padding-top: 10px; border-top: 1px solid alpha(currentColor, 0.1); }
+.vifte-glass .vifte-graph-foot { border-top-color: @vifte_line; }
+
 /* Kort: nøytrale, halvgjennomsiktige, tynn lys kant øverst. */
 .vifte-glass .vifte-card, .vifte-glass .vifte-tile {
   background-color: @vifte_card; border-radius: 16px;

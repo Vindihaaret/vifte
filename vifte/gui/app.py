@@ -18,11 +18,11 @@ from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa:
 from .alerts import AlertMonitor  # noqa: E402
 from .common import (Model, StatusHero, combo_row, move_entry, move_group, spin_row, stress_path,  # noqa: E402
                      switch_row)
-from .dialogs import (ControlDialog, CurveDialog, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
+from .dialogs import (ControlDialog, CurveEditor, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
                       RenameDialog)
-from .graph import CurveGraph, HistoryGraph, Sparkline  # noqa: E402
+from .graph import HistoryGraph, MiniCurve, Sparkline  # noqa: E402
 from .look import (board_choice, board_sensors, disk_selection, disks, fan_summary, group_kind,  # noqa: E402
-                   heat_step, palette_css, safety_state, temp_status)
+                   heat_step, PALETTE, palette_css, safety_state, temp_status)
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -80,33 +80,6 @@ def task_message(task):
     if msg:
         return _(msg[0]).format(*[_(a) for a in msg[1]])
     return task.get("message", "")
-
-
-class Card(Gtk.Box):
-    def __init__(self, title, subtitle=None, on_settings=None, hidden=False):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.START)
-        self.add_css_class("card")
-        self.add_css_class("vifte-card")
-        if hidden:
-            self.add_css_class("vifte-hidden")
-        head = Gtk.Box(spacing=6)
-        titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
-        self.title = Gtk.Label(label=title, xalign=0, ellipsize=3)
-        self.title.add_css_class("heading")
-        titles.append(self.title)
-        if subtitle:
-            sub = Gtk.Label(label=subtitle, xalign=0, ellipsize=3)
-            sub.add_css_class("dim-label")
-            sub.add_css_class("caption")
-            titles.append(sub)
-        head.append(titles)
-        if on_settings:
-            b = Gtk.Button(icon_name="emblem-system-symbolic", valign=Gtk.Align.START,
-                           tooltip_text=_("Innstillinger"))
-            b.add_css_class("flat")
-            b.connect("clicked", lambda *_: on_settings())
-            head.append(b)
-        self.append(head)
 
 
 def themed_image(names, **kw):
@@ -226,6 +199,41 @@ class TempCard(Gtk.Box):
             val.set_label(value)
 
 
+class CurvesPage(Gtk.Box):
+    """Kurver: liste med søk til venstre, detaljen for valgt kurve til høyre (under hverandre i smale vinduer)."""
+    def __init__(self):
+        super().__init__(css_classes=["vifte-curves"])
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_start=12, margin_end=12,
+                       margin_top=4, margin_bottom=12)
+        side.set_size_request(280, -1)
+        self.search = Gtk.SearchEntry(placeholder_text=_("Søk i kurver"))
+        side.append(self.search)
+        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=["vifte-curve-list"])
+        self.list.set_filter_func(self._filter)
+        self.search.connect("changed", lambda *_a: self.list.invalidate_filter())   # kort liste: filtrer straks
+        # i smale vinduer (listen over detaljen) får listen sin naturlige høyde, høyst max_content_height
+        self.list_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True,
+                                              propagate_natural_height=True, max_content_height=260,
+                                              child=self.list)
+        side.append(self.list_scroll)
+        self.append(side)
+        self.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["vifte-curves-sep"]))
+        self.detail = Adw.Bin()
+        self.detail_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, hexpand=True, vexpand=True)
+        self.detail_scroll.set_child(Adw.Clamp(maximum_size=1000, tightening_threshold=1000, margin_start=16,
+                                               margin_end=12, margin_top=4, margin_bottom=24, child=self.detail))
+        self.append(self.detail_scroll)
+
+    def _filter(self, row):
+        q = self.search.get_text().strip().lower()
+        return not q or q in getattr(row, "search_text", "")
+
+    def clear(self):
+        while (r := self.list.get_first_child()):
+            self.list.remove(r)
+        self.detail.set_child(None)
+
+
 class Section(Gtk.ScrolledWindow):
     def __init__(self):
         super().__init__(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
@@ -233,7 +241,6 @@ class Section(Gtk.ScrolledWindow):
                            margin_bottom=24, margin_start=12, margin_end=12)
         clamp = Adw.Clamp(maximum_size=1400, tightening_threshold=1400, child=self.box)
         self.set_child(clamp)
-        self.flow = None
         self.header = None
         # Rull automatisk når et kort eller en gruppe dras nær toppen eller bunnen.
         self._scroll_speed = 0.0
@@ -290,27 +297,6 @@ class Section(Gtk.ScrolledWindow):
         lst.connect("row-activated", lambda _l, row: getattr(row, "on_open", None) and row.on_open())
         self.box.append(lst)
         return lst
-
-    def new_flow(self, title=None, movable=False):
-        self.header = None
-        if title:
-            lab = Gtk.Label(label=title, xalign=0)
-            lab.add_css_class("title-4")
-            if movable:
-                head = Gtk.Box(spacing=6, margin_top=6, tooltip_text=_("Dra for å flytte gruppen"))
-                head.append(Gtk.Image(icon_name="list-drag-handle-symbolic", opacity=0.6))
-                head.append(lab)
-                head.set_cursor(Gdk.Cursor.new_from_name("grab"))
-            else:
-                lab.set_margin_top(6)
-                head = lab
-            self.header = head
-            self.box.append(head)
-        self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
-                                max_children_per_line=6, min_children_per_line=1,
-                                column_spacing=12, row_spacing=12)
-        self.box.append(self.flow)
-        return self.flow
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -394,7 +380,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.add_sensor_btn = Gtk.MenuButton(always_show_arrow=True, valign=Gtk.Align.CENTER, visible=False)
         add = Gtk.Box(spacing=6)
         add.append(Gtk.Image(icon_name="list-add-symbolic"))
-        add.append(Gtk.Label(label=_("Ny sensor")))
+        self.add_sensor_label = Gtk.Label(label=_("Ny sensor"))
+        add.append(self.add_sensor_label)
         self.add_sensor_btn.set_child(add)
         sensor_menu = Gio.Menu()
         for k, t in SENSOR_TYPES.items():
@@ -407,6 +394,20 @@ class MainWindow(Adw.ApplicationWindow):
         header.pack_end(mb)
         header.pack_end(self.pause_btn)
         header.pack_end(self.add_sensor_btn)
+        self.add_curve_btn = Gtk.MenuButton(always_show_arrow=True, valign=Gtk.Align.CENTER, visible=False)
+        add = Gtk.Box(spacing=6)
+        add.append(Gtk.Image(icon_name="list-add-symbolic"))
+        self.add_curve_label = Gtk.Label(label=_("Ny kurve"))
+        add.append(self.add_curve_label)
+        self.add_curve_btn.set_child(add)
+        curve_menu = Gio.Menu()
+        for k in CURVE_TYPES:
+            curve_menu.append(_(CURVE_TITLES[k]), f"win.add-curve::{k}")
+        self.add_curve_btn.set_menu_model(curve_menu)
+        a = Gio.SimpleAction.new("add-curve", GLib.VariantType.new("s"))
+        a.connect("activate", lambda _a, p: self.add_curve(p.get_string()))
+        self.add_action(a)
+        header.pack_end(self.add_curve_btn)
 
         for name, cb in (("import", self.import_config), ("export", self.export_config),
                          ("new-config", self.new_config), ("save-as", self.save_as),
@@ -446,11 +447,15 @@ class MainWindow(Adw.ApplicationWindow):
                  ("speeds", _("Hastigheter"), "weather-windy-symbolic"),
                  ("sensors", _("Sensorer"), "temperature-symbolic"))
         for key, title, icon in pages:
-            sec = self.build_overview() if key == "overview" else Section()
+            sec = self.build_overview() if key == "overview" else CurvesPage() if key == "curves" else Section()
             if key != "overview":
                 self.pages[key] = sec
             self.stack.add_titled_with_icon(sec, key, title, icon)
         tv.set_content(self.stack)
+        self.curve_selected = None
+        self._curve_building = False
+        self.pages["curves"].list.connect(
+            "row-selected", lambda _l, row: row is not None and not self._curve_building and self.show_curve(row.name))
         self.content_page = Adw.NavigationPage(title=pages[0][1], tag="content", child=tv)
         self.split.set_content(self.content_page)
         self.split.set_sidebar(Adw.NavigationPage(title="Vifte", tag="sidebar", child=self.build_sidebar(pages)))
@@ -473,6 +478,10 @@ class MainWindow(Adw.ApplicationWindow):
             bp.add_setter(self.overview_bottom, "homogeneous", False)
             if collapse:
                 bp.add_setter(self.split, "collapsed", True)
+                bp.add_setter(self.pages["curves"], "orientation", Gtk.Orientation.VERTICAL)
+                bp.add_setter(self.pages["curves"].list_scroll, "vexpand", False)
+                for label in (self.add_sensor_label, self.add_curve_label):   # bare ikonet, så tittelen får plass
+                    bp.add_setter(label, "visible", False)
             self.add_breakpoint(bp)
 
         self.connect("close-request", self.on_close)
@@ -566,6 +575,7 @@ class MainWindow(Adw.ApplicationWindow):
         child = self.stack.get_visible_child()
         title = self.stack.get_page(child).get_title() if child else ""
         self.add_sensor_btn.set_visible(key == "sensors")
+        self.add_curve_btn.set_visible(key == "curves")
         self.page_title.set_label(title)
         self.content_page.set_title(title)
         self.update_page_subtitle()
@@ -1201,32 +1211,46 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ---- kurver
     def build_curves(self):
-        cfg = self.model.cfg
-        sec = self.pages["curves"]
-        sec.clear()
-        bar = Gtk.Box(spacing=8)
-        bar.append(Gtk.Label(label=_("Kurver"), xalign=0, hexpand=True, css_classes=["title-4"]))
-        add = Gtk.MenuButton(label=_("Ny kurve"), icon_name="list-add-symbolic", always_show_arrow=True)
-        add.add_css_class("suggested-action")
-        menu = Gio.Menu()
-        for k in CURVE_TYPES:
-            menu.append(_(CURVE_TITLES[k]), f"win.add-curve::{k}")
-        add.set_menu_model(menu)
-        if not self.lookup_action("add-curve"):
-            a = Gio.SimpleAction.new("add-curve", GLib.VariantType.new("s"))
-            a.connect("activate", lambda _a, p: self.add_curve(p.get_string()))
-            self.add_action(a)
-        bar.append(add)
-        sec.box.append(bar)
-        flow = sec.new_flow()
+        """Lister kurvene og viser den valgte. Valget og rulleposisjonen beholdes når siden bygges på nytt."""
+        cfg, page = self.model.cfg, self.pages["curves"]
+        adj = page.detail_scroll.get_vadjustment()
+        before, pos = self.curve_selected, adj.get_value()
+        page.clear()
+        if not cfg.curves:
+            page.detail.set_child(Adw.StatusPage(icon_name="power-profile-performance-symbolic",
+                                                 title=_("Ingen kurver ennå"),
+                                                 description=_("Lag en kurve og velg den på en kontroll.")))
+            return
+        rows = {}
         for c in cfg.curves:
             if self.visible(c):
-                flow.append(self.curve_card(c))
-        if not cfg.curves:
-            sec.box.append(Adw.StatusPage(icon_name="power-profile-performance-symbolic", title=_("Ingen kurver ennå"),
-                                          description=_("Lag en kurve og velg den på en kontroll.")))
+                row = self.curve_row(c)
+                page.list.append(row)
+                rows[c.get("Name")] = row
+        name = self.curve_selected if self.curve_selected in rows else next(iter(rows), None)
+        if name:
+            self._curve_building = True
+            page.list.select_row(rows[name])
+            self._curve_building = False
+        self.show_curve(name)
+        if name == before:
+            GLib.idle_add(lambda: adj.set_value(pos) and False)
 
-    def curve_card(self, c):
+    def show_curve(self, name):
+        page = self.pages["curves"]
+        self.curve_selected = name
+        for row in page.list:
+            row.mini.active = row.name == name
+            row.mini.queue_draw()
+        if name is None:
+            page.detail.set_child(None)
+            return
+        editor = CurveEditor(self, name)
+        page.detail.set_child(editor)
+        editor.update_live()
+
+    def curve_row(self, c):
+        """Rad i kurvelisten: navn, type og kilde, kurveformen og nåverdien."""
         m = self.model
         name = c.get("Name")
         kind = curve_type(c)
@@ -1236,45 +1260,56 @@ class MainWindow(Adw.ApplicationWindow):
             sub += " · " + m.cfg.display_name(src, src)
         elif kind == "mix":
             sub += " · " + ", ".join(r.get("Name", "?") for r in c.get("SelectedFanCurves") or [])
-        card = Card(name, sub, lambda: self.open_dialog(CurveDialog, name), c.get("IsHidden"))
-        graph = None
-        if kind in ("graph", "linear"):
-            graph = CurveGraph(editable=False, height=110)
-            if kind == "graph":
-                graph.points = sorted(parse_point(p) for p in c.get("Points") or [])
-                graph.x_range = (float(c.get("MinimumTemperature", 20)), float(c.get("MaximumTemperature", 120)))
-                graph.y_range = (0, float(c.get("MaximumCommand", 100) or 100))
-            else:
-                graph.points = [(float(c.get("MinimumTemperature", 40)), float(c.get("MinimumFanSpeed", 20))),
-                                (float(c.get("MaximumTemperature", 80)), float(c.get("MaximumFanSpeed", 100)))]
-                graph.x_range = (20, 100)
-            if graph.x_range[1] <= graph.x_range[0]:
-                graph.x_range = (20, 120)
-            graph.fahrenheit = m.fahrenheit
-            card.append(graph)
-        vals = Gtk.Box(spacing=12)
-        big = Gtk.Label(label="–", xalign=0)
-        big.add_css_class("vifte-big")
-        inp = Gtk.Label(label="", xalign=0, valign=Gtk.Align.END, margin_bottom=4)
-        inp.add_css_class("dim-label")
-        vals.append(big)
-        vals.append(inp)
-        card.append(vals)
+        row = Gtk.ListBoxRow(css_classes=["vifte-curve-row"])
+        row.name = name
+        row.search_text = f"{name} {sub}".lower()
+        if c.get("IsHidden"):
+            row.add_css_class("vifte-hidden")
+        box = Gtk.Box(spacing=10)
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        texts.append(Gtk.Label(label=name, xalign=0, ellipsize=3, css_classes=["vifte-row-title"]))
+        sub_label = Gtk.Label(label=sub, xalign=0, ellipsize=3, css_classes=["caption", "dim-label"])
+        texts.append(sub_label)
+        box.append(texts)
+        mini = MiniCurve()
+
+        def num(key, default):
+            return float(c.get(key, default) or default)
+        if kind == "graph":
+            mini.points = sorted(parse_point(p) for p in c.get("Points") or [])
+            mini.x_range = (num("MinimumTemperature", 20), num("MaximumTemperature", 120))
+            mini.y_range = (0, num("MaximumCommand", 100))
+        elif kind == "linear":
+            mini.points = [(num("MinimumTemperature", 40), num("MinimumFanSpeed", 20)),
+                           (num("MaximumTemperature", 80), num("MaximumFanSpeed", 100))]
+        elif kind == "flat":
+            mini.points = [(20, num("Percent", 50)), (100, num("Percent", 50))]
+        elif kind == "trigger":
+            load = num("LoadTemperature", 70)
+            mini.points = [(num("IdleTemperature", 50), num("IdleFanSpeed", 30)), (load, num("IdleFanSpeed", 30)),
+                           (load + 0.01, num("LoadFanSpeed", 100))]
+        if mini.x_range[1] <= mini.x_range[0]:
+            mini.x_range = (20, 120)
+        row.mini = mini
+        box.append(mini)
+        value = Gtk.Label(label="–", xalign=1, width_chars=6, css_classes=["vifte-value"])
+        box.append(value)
+        row.set_child(box)
         unit = " RPM" if int(c.get("CommandMode", 0) or 0) == 1 else " %"
 
         def update():
             st = (m.state.get("curves") or {}).get(name) or {}
             v, t = st.get("value"), st.get("input")
-            big.set_label("–" if v is None else f"{v:.0f}{unit}")
-            inp.set_label(m.fmt_temp(t) if t is not None else (st.get("error") or ""))
+            value.set_label("–" if v is None else f"{v:.0f}{unit}")
             if src and t is None and m.temp_value(src) is None:
-                inp.set_label(_("Sensor mangler"))
-                inp.add_css_class("vifte-missing")
-            if graph:
-                graph.marker = (t, v)
-                graph.queue_draw()
+                sub_label.set_label(_("Sensor mangler"))
+                sub_label.add_css_class("vifte-missing")
         self.updaters.append(update)
-        return card
+        return row
+
+    def accent_text(self):
+        """Aksentfargen for tekst i lys/mørk modus (til Pango-markup)."""
+        return PALETTE["dark" if Adw.StyleManager.get_default().get_dark() else "light"]["vifte_accent_text"]
 
     def add_curve(self, kind):
         cfg = self.model.cfg
@@ -1290,8 +1325,8 @@ class MainWindow(Adw.ApplicationWindow):
                 src = e["Identifier"]
                 break
         cfg.curves.append(new_curve(kind, name, cfg, src))
+        self.curve_selected = name   # den nye kurven velges i listen
         self.config_changed(True)
-        self.open_dialog(CurveDialog, name)
 
     # ---- hastigheter
     def build_speeds(self):
