@@ -503,16 +503,17 @@ class MainWindow(Adw.ApplicationWindow):
         tv = Adw.ToolbarView(css_classes=["vifte-sidebar"])
         header = Adw.HeaderBar(css_classes=["vifte-page-header"])
         header.set_title_widget(Gtk.Box())
-        brand = Gtk.Box(spacing=10, margin_start=4)
+        tv.add_top_bar(header)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=10, margin_end=10, margin_bottom=12)
+        # app-navnet står under vindusknappene, ikke ved siden av dem
+        brand = Gtk.Box(spacing=10, margin_start=6, margin_bottom=16)
         brand.append(Gtk.Image(icon_name="no.vifte.Vifte", pixel_size=36))
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
         names.append(Gtk.Label(label="Vifte", xalign=0, css_classes=["heading"]))
         names.append(Gtk.Label(label="FanControl for Linux", xalign=0, css_classes=["caption", "dim-label"]))
         brand.append(names)
-        header.pack_start(brand)
-        tv.add_top_bar(header)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=10, margin_end=10, margin_bottom=12)
+        box.append(brand)
         box.append(Gtk.Label(label=_("Konfigurasjon"), xalign=0, margin_start=6, margin_bottom=6,
                              css_classes=["caption-heading", "dim-label"]))
         box.append(self.profile_btn)
@@ -539,7 +540,7 @@ class MainWindow(Adw.ApplicationWindow):
         status.append(self.status_icon)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
         self.status_title = Gtk.Label(xalign=0, ellipsize=3, css_classes=["vifte-status-title"])
-        self.status_text = Gtk.Label(xalign=0, ellipsize=3, css_classes=["caption", "dim-label"])
+        self.status_text = Gtk.Label(xalign=0, wrap=True, css_classes=["caption", "dim-label"])   # smalt sidefelt: bryt linjen
         texts.append(self.status_title)
         texts.append(self.status_text)
         status.append(texts)
