@@ -465,4 +465,6 @@ T = {
     "hottest of {}": "le plus chaud sur {}",
     "All controlled fans at 100 % at {}": "Tous les ventilateurs pilotés à 100 % à {}",
     "{} % if a curve's sensor disappears": "{} % si le capteur d'une courbe disparaît",
+    # --- listerader (redesign)
+    "Details": "Détails",
 }

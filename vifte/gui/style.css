@@ -84,6 +84,25 @@
 .vifte-fan-row.idle .vifte-icon-surface { opacity: 0.45; }
 .vifte-glass .vifte-fan-row.idle levelbar block.filled { background-color: @vifte_idle; }
 
+/* ---- Lister (Kontroller, Hastigheter, Sensorer) */
+.vifte-icon-surface.small { min-width: 22px; min-height: 22px; }
+.vifte-icon-surface.accent { background-color: @accent_bg_color; color: @accent_fg_color; }
+.vifte-group-label { font-size: 14px; font-weight: 700; }
+.vifte-list { border-radius: 14px; }
+.vifte-list > row { min-height: 56px; padding: 0 14px; }
+.vifte-row-title { font-weight: 600; }
+.vifte-value { font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
+.vifte-glass .vifte-list {
+  background-color: @vifte_card;
+  box-shadow: inset 0 1px alpha(white, 0.09), inset 0 0 0 1px alpha(white, 0.06), 0 12px 32px alpha(black, 0.35);
+}
+.vifte-glass.vifte-light .vifte-list {
+  box-shadow: inset 0 1px alpha(white, 0.9), inset 0 0 0 1px alpha(white, 0.55), 0 10px 28px alpha(#1E283C, 0.10);
+}
+.vifte-glass .vifte-list > row { background: none; border-color: @vifte_line; }
+.vifte-glass .vifte-list > row:hover { background-color: alpha(currentColor, 0.03); }
+.vifte-glass .vifte-list .vifte-hidden { opacity: 0.5; }
+
 /* Kort: nøytrale, halvgjennomsiktige, tynn lys kant øverst. */
 .vifte-glass .vifte-card, .vifte-glass .vifte-tile {
   background-color: @vifte_card; border-radius: 16px;
@@ -109,9 +128,10 @@
 .vifte-glass .vifte-slim { box-shadow: none; background-color: @vifte_fill; }
 
 /* Stolper: 6 px, helt runde, nøytral fyllfarge. */
-.vifte-card levelbar trough, .vifte-card levelbar block { min-height: 6px; border-radius: 99px; }
-.vifte-glass .vifte-card levelbar block.filled { background-color: @vifte_neutral; }
-.vifte-glass .vifte-card levelbar block.empty { background-color: @vifte_track; }
+.vifte-card levelbar trough, .vifte-card levelbar block,
+.vifte-list levelbar trough, .vifte-list levelbar block { min-height: 6px; border-radius: 99px; }
+.vifte-glass .vifte-card levelbar block.filled, .vifte-glass .vifte-list levelbar block.filled { background-color: @vifte_neutral; }
+.vifte-glass .vifte-card levelbar block.empty, .vifte-glass .vifte-list levelbar block.empty { background-color: @vifte_track; }
 
 .vifte-hero { padding: 13px 16px; border-radius: 14px;
   background-image: linear-gradient(110deg, alpha(@vifte_calm, 0.17), alpha(@window_fg_color, 0.04));

@@ -118,6 +118,21 @@ def disk_selection(disk_list, values, mode="hottest", pick=None):
     return [max(known, key=lambda d: values[d["id"]])] if known else [disk_list[0]]
 
 
+CPU_PREFIXES = ("/amdcpu/", "/intelcpu/")
+GPU_PREFIXES = ("NVApiWrapper/", "/gpu-amd/", "/gpu-intel/", "/gpu-nvidia/")
+
+
+def group_kind(ids):
+    """Identiteten til en gruppe på Kontroller/Hastigheter/Sensorer ut fra id-ene i den:
+    «cpu», «gpu», «board», «disk» eller «other». Bestemmer ikon og farge (designspesifikasjonen, seksjon 2)."""
+    ids = [i or "" for i in ids]
+    for kind, prefixes in (("cpu", CPU_PREFIXES), ("gpu", GPU_PREFIXES), ("board", BOARD_PREFIXES),
+                           ("disk", DISK_PREFIXES)):
+        if any(i.startswith(prefixes) for i in ids):
+            return kind
+    return "other"
+
+
 def heat_step(temp, previous=None, emergency=False):
     """Fargetonen for vinduet. Går ned først når temperaturen er HEAT_MARGIN under grensen."""
     if emergency:

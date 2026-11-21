@@ -21,8 +21,8 @@ from .common import (Model, StatusHero, combo_row, move_entry, move_group, spin_
 from .dialogs import (ControlDialog, CurveDialog, CustomSensorDialog, PromptDialog, RemapDialog,  # noqa: E402
                       RenameDialog)
 from .graph import CurveGraph, HistoryGraph, Sparkline  # noqa: E402
-from .look import (board_choice, board_sensors, disk_selection, disks, fan_summary, heat_step,  # noqa: E402
-                   palette_css, safety_state, temp_status)
+from .look import (board_choice, board_sensors, disk_selection, disks, fan_summary, group_kind,  # noqa: E402
+                   heat_step, palette_css, safety_state, temp_status)
 from .tray import Tray  # noqa: E402
 from .update import UpdateManager, auto_enabled, last_checked  # noqa: E402
 
@@ -118,13 +118,21 @@ ICONS = {"cpu": ["cpu-symbolic", "computer-chip-symbolic", "computer-symbolic"],
          "gpu": ["graphics-card-symbolic", "video-display-symbolic"],
          "board": ["computer-chip-symbolic", "auth-smartcard-symbolic", "computer-symbolic"],
          "disk": ["drive-harddisk-solidstate-symbolic", "drive-harddisk-symbolic"],
-         "fan": ["no.vifte.Vifte-symbolic"]}
+         "fan": ["no.vifte.Vifte-symbolic"],
+         "other": ["computer-symbolic"],
+         "custom": ["starred-symbolic"]}
+
+# gruppe på Kontroller/Hastigheter/Sensorer → (ikon, ikonflate, sparkline for temperatur, sparkline for turtall).
+# Vifter er marineblå, unntatt på skjermkortet (kobber).
+GROUP_STYLE = {"cpu": ("cpu", "cpu", "cpu", "cpu"), "gpu": ("gpu", "gpu", "gpu", "gpu"),
+               "board": ("board", "neutral", "neutral", "cpu"), "disk": ("disk", "neutral", "neutral", "cpu"),
+               "other": ("other", "neutral", "neutral", "cpu"), "custom": ("custom", "accent", "accent", "accent")}
 
 
-def icon_surface(icon, kind="neutral"):
+def icon_surface(icon, kind="neutral", small=False):
     """Liten farget flate med hvitt ikon: CPU marineblå, GPU kobber, ellers nøytral grå."""
-    img = themed_image(ICONS[icon], pixel_size=14, valign=Gtk.Align.CENTER)
-    img.set_css_classes(["vifte-icon-surface", kind])
+    img = themed_image(ICONS[icon], pixel_size=13 if small else 14, valign=Gtk.Align.CENTER)
+    img.set_css_classes(["vifte-icon-surface", kind] + (["small"] if small else []))
     return img
 
 
@@ -133,7 +141,7 @@ def link_button(label, cb):
     b = Gtk.Button(css_classes=["flat", "vifte-link"], valign=Gtk.Align.CENTER)
     box = Gtk.Box(spacing=4)
     box.append(Gtk.Label(label=label))
-    box.append(Gtk.Image(icon_name="go-next-symbolic", pixel_size=12))
+    box.append(Gtk.Image(icon_name="pan-end-symbolic", pixel_size=12))
     b.set_child(box)
     b.connect("clicked", lambda *_a: cb())
     return b
@@ -223,7 +231,7 @@ class Section(Gtk.ScrolledWindow):
         super().__init__(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12,
                            margin_bottom=24, margin_start=12, margin_end=12)
-        clamp = Adw.Clamp(maximum_size=1400, child=self.box)
+        clamp = Adw.Clamp(maximum_size=1400, tightening_threshold=1400, child=self.box)
         self.set_child(clamp)
         self.flow = None
         self.header = None
@@ -264,6 +272,24 @@ class Section(Gtk.ScrolledWindow):
     def clear(self):
         while (c := self.box.get_first_child()):
             self.box.remove(c)
+
+    def new_list(self, title, kind="other", movable=False):
+        """Gruppe som innfelt liste: overskrift (draghåndtak, ikonflate, tittel) og en Gtk.ListBox.
+        Klikk på en rad kaller radens on_open, hvis den har en."""
+        head = Gtk.Box(spacing=8, margin_top=6)
+        if movable:
+            head.set_tooltip_text(_("Dra for å flytte gruppen"))
+            head.append(Gtk.Image(icon_name="list-drag-handle-symbolic", opacity=0.6))
+            head.set_cursor(Gdk.Cursor.new_from_name("grab"))
+        icon, surface, _t, _f = GROUP_STYLE[kind]
+        head.append(icon_surface(icon, surface, small=True))
+        head.append(Gtk.Label(label=title, xalign=0, ellipsize=3, css_classes=["vifte-group-label"]))
+        self.header = head
+        self.box.append(head)
+        lst = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list", "vifte-list"])
+        lst.connect("row-activated", lambda _l, row: getattr(row, "on_open", None) and row.on_open())
+        self.box.append(lst)
+        return lst
 
     def new_flow(self, title=None, movable=False):
         self.header = None
@@ -364,9 +390,23 @@ class MainWindow(Adw.ApplicationWindow):
                                     tooltip_text=_("Pause styring"))
         for b in (self.save_btn, mb, self.pause_btn):
             b.set_valign(Gtk.Align.CENTER)   # hodet er 72 px høyt
+        # «Ny sensor» står i sidehodet og vises bare på Sensorer
+        self.add_sensor_btn = Gtk.MenuButton(always_show_arrow=True, valign=Gtk.Align.CENTER, visible=False)
+        add = Gtk.Box(spacing=6)
+        add.append(Gtk.Image(icon_name="list-add-symbolic"))
+        add.append(Gtk.Label(label=_("Ny sensor")))
+        self.add_sensor_btn.set_child(add)
+        sensor_menu = Gio.Menu()
+        for k, t in SENSOR_TYPES.items():
+            sensor_menu.append(_(t), f"win.add-sensor::{k}")
+        self.add_sensor_btn.set_menu_model(sensor_menu)
+        a = Gio.SimpleAction.new("add-sensor", GLib.VariantType.new("s"))
+        a.connect("activate", lambda _a, p: self.add_sensor(p.get_string()))
+        self.add_action(a)
         header.pack_end(self.save_btn)
         header.pack_end(mb)
         header.pack_end(self.pause_btn)
+        header.pack_end(self.add_sensor_btn)
 
         for name, cb in (("import", self.import_config), ("export", self.export_config),
                          ("new-config", self.new_config), ("save-as", self.save_as),
@@ -415,6 +455,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.split.set_content(self.content_page)
         self.split.set_sidebar(Adw.NavigationPage(title="Vifte", tag="sidebar", child=self.build_sidebar(pages)))
         self.stack.connect("notify::visible-child-name", lambda *_a: self.page_changed())
+        self.narrow_hide = []
+        self.split.connect("notify::collapsed", lambda *_a: self.apply_narrow())
         self.page_changed()
 
         style = Adw.StyleManager.get_default()
@@ -506,6 +548,11 @@ class MainWindow(Adw.ApplicationWindow):
         tv.set_content(box)
         return tv
 
+    def apply_narrow(self):
+        """I smale vinduer (sidefeltet kollapset) skjules det som er minst viktig i radene."""
+        for w in self.narrow_hide:
+            w.set_visible(not self.split.get_collapsed())
+
     def show_page(self, key):
         self.stack.set_visible_child_name(key)
         self.split.set_show_content(True)
@@ -518,6 +565,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.nav.select_row(row)
         child = self.stack.get_visible_child()
         title = self.stack.get_page(child).get_title() if child else ""
+        self.add_sensor_btn.set_visible(key == "sensors")
         self.page_title.set_label(title)
         self.content_page.set_title(title)
         self.update_page_subtitle()
@@ -560,7 +608,7 @@ class MainWindow(Adw.ApplicationWindow):
         page = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin_top=4, margin_bottom=24,
                       margin_start=12, margin_end=12)
-        page.set_child(Adw.Clamp(maximum_size=1400, child=box))
+        page.set_child(Adw.Clamp(maximum_size=1400, tightening_threshold=1400, child=box))
 
         self.card_cpu = TempCard("CPU", "cpu", "cpu")
         self.card_gpu = TempCard("GPU", "gpu", "gpu")
@@ -984,12 +1032,14 @@ class MainWindow(Adw.ApplicationWindow):
     def rebuild(self):
         self.apply_theme()
         self.updaters = []
+        self.narrow_hide = []
         self.build_profiles()
         self.build_overview_fans()
         self.build_controls()
         self.build_curves()
         self.build_speeds()
         self.build_sensors()
+        self.apply_narrow()
         for name, val in (("show-hidden", self.model.show_hidden),
                           ("pause", bool(self.model.state.get("paused")))):
             self.lookup_action(name).set_state(GLib.Variant.new_boolean(val))
@@ -1051,31 +1101,45 @@ class MainWindow(Adw.ApplicationWindow):
                                           description=_("Last inn driveren for hovedkortets Super I/O-brikke "
                                                       "(f.eks. «sudo modprobe nct6775») og søk på nytt.")))
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
-            flow = sec.new_flow(hwname)
+            lst = sec.new_list(hwname, group_kind([m.local_id(e.get("Identifier")) for e, _l in items]))
             slim = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=12,
                                column_spacing=8, row_spacing=8, visible=False)
             for e, local in items:
-                flow.append(self.control_card(e, local, slim))
+                lst.append(self.control_row(e, local, slim, lst))
             sec.box.append(slim)
 
-    def control_card(self, e, local, slim):
+    def control_row(self, e, local, slim, lst):
+        """Rad på Kontroller: vifteikon, navn og turtall, kurvevelger, prosent, stolpe, bryter og tannhjul."""
         m, cfg = self.model, self.model.cfg
         ident = e.get("Identifier")
-        card = Card(e.get("NickName") or e.get("Name") or ident, None if local else ident,
-                    lambda: self.open_dialog(ControlDialog, ident), e.get("IsHidden"))
-        # En utgang uten vifte vises som en liten merkelapp i stedet for et helt kort.
-        chip = Gtk.Button(label=f"{card.title.get_label()} · {_('Ingen vifte (0 RPM)')}",
-                          tooltip_text=_("Innstillinger"))
+        title = e.get("NickName") or e.get("Name") or ident
+        row = Gtk.ListBoxRow(activatable=False, css_classes=["vifte-row", "vifte-fan-row"])
+        if e.get("IsHidden"):
+            row.add_css_class("vifte-hidden")
+        box = Gtk.Box(spacing=12)
+        box.append(icon_surface("fan"))
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        texts.append(Gtk.Label(label=title, xalign=0, ellipsize=3, css_classes=["heading"]))
+        line = Gtk.Box(spacing=6)
+        rpm = Gtk.Label(xalign=0, ellipsize=3, label="" if local else ident,
+                        css_classes=["caption", "dim-label", "vifte-sub"])
+        manual = Gtk.Label(css_classes=["caption", "accent"])
+        line.append(rpm)
+        line.append(manual)
+        texts.append(line)
+        box.append(texts)
+        # En utgang uten vifte vises som en liten merkelapp under gruppen i stedet for en hel rad.
+        chip = Gtk.Button(label=f"{title} · {_('Ingen vifte (0 RPM)')}", tooltip_text=_("Innstillinger"))
         chip.add_css_class("flat")
         chip.add_css_class("vifte-slim")
         chip.connect("clicked", lambda *_a: self.open_dialog(ControlDialog, ident))
         slim.append(chip)
         chip.get_parent().set_visible(False)
-        row = Gtk.Box(spacing=8)
-        sw = Gtk.Switch(active=bool(e.get("Enable")), valign=Gtk.Align.CENTER,
-                        tooltip_text=_("Aktiver styring"))
+
+        sw = Gtk.Switch(active=bool(e.get("Enable")), valign=Gtk.Align.CENTER, tooltip_text=_("Aktiver styring"))
         names = [_("(ingen kurve)")] + [c.get("Name") for c in cfg.curves]
-        dd = Gtk.DropDown(model=Gtk.StringList.new(names), hexpand=True)
+        dd = Gtk.DropDown(model=Gtk.StringList.new(names), valign=Gtk.Align.CENTER)
+        dd.set_size_request(184, -1)   # lik bredde i alle rader
         cur = (e.get("SelectedFanCurve") or {}).get("Name")
         dd.set_selected(names.index(cur) if cur in names else 0)
 
@@ -1092,25 +1156,16 @@ class MainWindow(Adw.ApplicationWindow):
             self.config_changed(False)
         sw.connect("notify::active", on_switch)
         dd.connect("notify::selected", on_curve)
-        row.append(sw)
-        row.append(dd)
-        card.append(row)
-
-        vals = Gtk.Box(spacing=12, margin_top=4)
-        big = Gtk.Label(label="–", xalign=0)
-        big.add_css_class("vifte-big")
-        rpm = Gtk.Label(label="", xalign=0, valign=Gtk.Align.END, margin_bottom=4, hexpand=True)
-        rpm.add_css_class("vifte-sub")
-        rpm.add_css_class("dim-label")
-        manual = Gtk.Label(label="", valign=Gtk.Align.END, margin_bottom=4)
-        manual.add_css_class("caption")
-        manual.add_css_class("accent")
-        vals.append(big)
-        vals.append(rpm)
-        vals.append(manual)
-        card.append(vals)
-        level = Gtk.LevelBar(min_value=0, max_value=100)
-        card.append(level)
+        pct = Gtk.Label(label="–", xalign=1, width_chars=5, css_classes=["vifte-value"])
+        level = Gtk.LevelBar(min_value=0, max_value=100, valign=Gtk.Align.CENTER)
+        level.set_size_request(96, -1)
+        self.narrow_hide.append(level)   # skjules i smale vinduer, så navnet får plass
+        gear = Gtk.Button(icon_name="emblem-system-symbolic", valign=Gtk.Align.CENTER, tooltip_text=_("Innstillinger"),
+                          css_classes=["flat"])
+        gear.connect("clicked", lambda *_a: self.open_dialog(ControlDialog, ident))
+        for w in (dd, pct, level, sw, gear):
+            box.append(w)
+        row.set_child(box)
 
         def update():
             st = (m.state.get("control_state") or {}).get(ident, {})
@@ -1118,21 +1173,21 @@ class MainWindow(Adw.ApplicationWindow):
             out = st.get("out")
             read = st.get("read")
             no_fan = bool(st.get("no_fan"))
-            card.get_parent().set_visible(not no_fan)
+            row.set_visible(not no_fan)
             chip.get_parent().set_visible(no_fan)
             slim.set_visible(any(c.get_visible() for c in slim))
-            if out is not None:
-                big.set_label(f"{out:.0f} %")
-                level.set_value(out)
-            elif read is not None:
-                big.set_label(f"{read:.0f} %")
-                level.set_value(read)
-            else:
-                big.set_label("–")
-                level.set_value(0)
+            lst.set_visible(any(r.get_visible() for r in lst))
+            val = out if out is not None else read
+            pct.set_label(f"{val:.0f} %" if val is not None else "–")
+            level.set_value(val or 0)
             r = st.get("rpm")
             pump = st.get("pump")
-            rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None and local else ""))
+            if local:
+                rpm.set_label(f"{r:.0f} RPM" if r is not None else (_("BIOS styrer") if out is None else ""))
+            if out is None:
+                row.add_css_class("idle")   # styres ikke av Vifte: svakere tone
+            else:
+                row.remove_css_class("idle")
             if pump:
                 manual.set_label(_("PUMPE"))
             else:
@@ -1142,7 +1197,7 @@ class MainWindow(Adw.ApplicationWindow):
             dd.set_sensitive(not pump)
             sw.set_tooltip_text(_("Pumpe – endres under tannhjulet") if pump else _("Aktiver styring"))
         self.updaters.append(update)
-        return card
+        return row
 
     # ---- kurver
     def build_curves(self):
@@ -1249,32 +1304,69 @@ class MainWindow(Adw.ApplicationWindow):
                 s = m.sensor(e.get("Identifier"))
                 groups.setdefault(s["hardware"] if s else _("Mangler på denne maskinen"), []).append(e)
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
-            flow = sec.new_flow(hwname, movable=True)
+            kind = group_kind([m.local_id(e.get("Identifier")) for e in items])
+            lst = sec.new_list(hwname, kind, movable=True)
             self.make_group_movable(sec.header, "speeds", hwname, cfg.fan_sensors)
             for e in items:
-                flow.append(self.value_card(e, "fan", cfg.fan_sensors, hwname, "speeds"))
+                lst.append(self.sensor_row(e, "fan", GROUP_STYLE[kind][3], cfg.fan_sensors, hwname, "speeds"))
 
-    def value_card(self, e, kind, lst=None, group=None, page=None):
-        m = self.model
+    def sensor_row(self, e, kind, color, lst, group, page):
+        """Rad for en maskinvaresensor; klikk åpner sensormenyen. Kan dras innen gruppen."""
         ident = e.get("Identifier")
-        name = m.display_name(ident)
+        name = self.model.display_name(ident)
         own = e.get("NickName") or e.get("Name") or ident
-        card = Card(name, own if name != own else None, lambda: self.sensor_menu(ident), e.get("IsHidden"))
-        big = Gtk.Label(label="–", xalign=0)
-        big.add_css_class("vifte-big")
-        card.append(big)
+        row = self.value_row(ident, name, own if name != own else None, kind, color,
+                             lambda: self.sensor_menu(ident), e.get("IsHidden"))
+        self.make_movable(row, ident, lst, group, page)
+        return row
+
+    def value_row(self, ident, title, subtitle, kind, color, on_open, hidden=False):
+        """Rad på Hastigheter/Sensorer: navn (og status når varm/het), sparkline, verdi og pil.
+        kind: «fan» (RPM) eller «temperature»."""
+        m = self.model
+        row = Gtk.ListBoxRow(css_classes=["vifte-row"])
+        row.on_open = on_open
+        if hidden:
+            row.add_css_class("vifte-hidden")
+        box = Gtk.Box(spacing=12)
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        line = Gtk.Box(spacing=8)
+        line.append(Gtk.Label(label=title, xalign=0, ellipsize=3, css_classes=["vifte-row-title"]))
+        chip = StatusChip()
+        line.append(chip)
+        texts.append(line)
+        if subtitle:
+            texts.append(Gtk.Label(label=subtitle, xalign=0, ellipsize=3, css_classes=["caption", "dim-label"]))
+        box.append(texts)
+        spark = Sparkline(min_span=300 if kind == "fan" else 5, height=28, color=color, dot=True)
+        spark.set_size_request(150, -1)
+        spark.set_hexpand(False)
+        spark.set_valign(Gtk.Align.CENTER)
+        value = Gtk.Label(label="–", xalign=1, width_chars=9, css_classes=["vifte-value"])
+        arrow = Gtk.Button(icon_name="pan-end-symbolic", valign=Gtk.Align.CENTER, tooltip_text=_("Detaljer"),
+                           css_classes=["flat"])
+        arrow.connect("clicked", lambda *_a: on_open())
+        for w in (spark, value, arrow):
+            box.append(w)
+        row.set_child(box)
+        names = {"warm": _("Varm"), "hot": _("Het")}
+
+        def fmt(v):
+            return f"{v:.0f} RPM" if kind == "fan" else m.fmt_temp(v)
 
         def update():
             v = m.temp_value(ident)
-            if kind == "fan":
-                big.set_label("–" if v is None else f"{v:.0f} RPM")
-            else:
-                big.set_label(m.fmt_temp(v))
+            value.set_label("–" if v is None else fmt(v))
+            status = temp_status(v) if kind != "fan" else None
+            chip.set_status(status if status in names else None, names.get(status, ""))  # bare når varm/het
+            t, vals = m.history_values(ident)
+            spark.set_values(vals)
+            known = [x for x in vals if x is not None]
+            minutes = round((t[-1] - t[0]) / 60) if len(t) > 1 else 0
+            spark.set_tooltip_text(_("Siste {} min: {} – {}").format(minutes, fmt(min(known)), fmt(max(known)))
+                                   if known and minutes >= 1 else None)
         self.updaters.append(update)
-        self.add_history(card, ident, kind)
-        if lst is not None:
-            self.make_movable(card, ident, lst, group, page)
-        return card
+        return row
 
     def make_movable(self, card, ident, lst, group, page=None):
         """Kortet kan dras og slippes på et annet kort i samme gruppe. Rekkefølgen er rekkefølgen
@@ -1331,30 +1423,6 @@ class MainWindow(Adw.ApplicationWindow):
         if move_entry(lst, src_id, dst_id):
             self.config_changed(True)
 
-    def add_history(self, card, ident, kind):
-        """Graf over de siste 30 minuttene (fra tjenestens historikk) nederst på kortet."""
-        m = self.model
-        spark = Sparkline(min_span=300 if kind == "fan" else 5)
-        caption = Gtk.Label(xalign=0, visible=False)
-        caption.add_css_class("dim-label")
-        caption.add_css_class("caption")
-        caption.add_css_class("vifte-sub")
-        card.append(spark)
-        card.append(caption)
-
-        def fmt(v):
-            return f"{v:.0f} RPM" if kind == "fan" else m.fmt_temp(v)
-
-        def update():
-            t, vals = m.history_values(ident)
-            spark.set_values(vals)
-            known = [v for v in vals if v is not None]
-            minutes = round((t[-1] - t[0]) / 60) if len(t) > 1 else 0
-            caption.set_visible(bool(known) and minutes >= 1)
-            if known and minutes >= 1:
-                caption.set_label(_("Siste {} min: {} – {}").format(minutes, fmt(min(known)), fmt(max(known))))
-        self.updaters.append(update)
-
     def sensor_menu(self, ident):
         entry = self.model.cfg.sensor_entry(ident)
         dlg = Adw.AlertDialog(heading=self.model.display_name(ident), body=ident)
@@ -1389,42 +1457,27 @@ class MainWindow(Adw.ApplicationWindow):
         m, cfg = self.model, self.model.cfg
         sec = self.pages["sensors"]
         sec.clear()
-        bar = Gtk.Box(spacing=8)
-        bar.append(Gtk.Label(label=_("Egendefinerte sensorer"), xalign=0, hexpand=True, css_classes=["title-4"]))
-        add = Gtk.MenuButton(label=_("Ny sensor"), icon_name="list-add-symbolic", always_show_arrow=True)
-        menu = Gio.Menu()
-        for k, t in SENSOR_TYPES.items():
-            menu.append(_(t), f"win.add-sensor::{k}")
-        add.set_menu_model(menu)
-        if not self.lookup_action("add-sensor"):
-            a = Gio.SimpleAction.new("add-sensor", GLib.VariantType.new("s"))
-            a.connect("activate", lambda _a, p: self.add_sensor(p.get_string()))
-            self.add_action(a)
-        bar.append(add)
-        sec.box.append(bar)
         if cfg.custom_sensors:
-            flow = sec.new_flow()
+            lst = sec.new_list(_("Egendefinerte sensorer"), "custom")
             for s in cfg.custom_sensors:
                 ident = s.get("Identifier")
-                card = Card(s.get("Name") or ident, _(SENSOR_TYPES[custom_sensor_type(s)]),
-                            lambda i=ident: self.open_dialog(CustomSensorDialog, i))
-                big = Gtk.Label(label="–", xalign=0)
-                big.add_css_class("vifte-big")
-                card.append(big)
-                self.updaters.append(lambda b=big, i=ident: b.set_label(m.fmt_temp(m.temp_value(i))))
-                self.add_history(card, ident, "temperature")
-                self.make_movable(card, ident, cfg.custom_sensors, "custom", None)
-                flow.append(card)
+                row = self.value_row(ident, s.get("Name") or ident, _(SENSOR_TYPES[custom_sensor_type(s)]),
+                                     "temperature", GROUP_STYLE["custom"][2],
+                                     lambda i=ident: self.open_dialog(CustomSensorDialog, i))
+                self.make_movable(row, ident, cfg.custom_sensors, "custom", None)
+                lst.append(row)
         groups = {}
         for e in cfg.temp_sensors:
             if self.visible(e):
                 s = m.sensor(e.get("Identifier"))
                 groups.setdefault(s["hardware"] if s else _("Mangler på denne maskinen"), []).append(e)
         for hwname, items in sorted(groups.items(), key=lambda g: g[0] == _("Mangler på denne maskinen")):
-            flow = sec.new_flow(hwname, movable=True)
+            kind = group_kind([m.local_id(e.get("Identifier")) for e in items])
+            lst = sec.new_list(hwname, kind, movable=True)
             self.make_group_movable(sec.header, "sensors", hwname, cfg.temp_sensors)
             for e in items:
-                flow.append(self.value_card(e, "temperature", cfg.temp_sensors, hwname, "sensors"))
+                lst.append(self.sensor_row(e, "temperature", GROUP_STYLE[kind][2], cfg.temp_sensors, hwname,
+                                           "sensors"))
 
     def add_sensor(self, kind):
         cfg = self.model.cfg

@@ -935,6 +935,17 @@ class LookTests(unittest.TestCase):
         self.assertEqual([x["id"] for x in disk_selection(d, {})], ["/nvme/0/temperature/0"])
         self.assertEqual(disk_selection([], values), [])
 
+    def test_group_kind(self):
+        from vifte.gui.look import group_kind
+        self.assertEqual(group_kind(["/amdcpu/0/temperature/2", "/amdcpu/0/temperature/3"]), "cpu")
+        self.assertEqual(group_kind(["NVApiWrapper/0-AD103-A/fan/0"]), "gpu")
+        self.assertEqual(group_kind(["/gpu-amd/0/temperature/0"]), "gpu")
+        self.assertEqual(group_kind(["/lpc/nct6799d/control/1"]), "board")
+        self.assertEqual(group_kind(["/hwmon/asusec/0/temperature/2"]), "board")
+        self.assertEqual(group_kind(["/nvme/1/temperature/0"]), "disk")
+        self.assertEqual(group_kind(["/hwmon/spd5118/0/temperature/0", None]), "other")
+        self.assertEqual(group_kind([]), "other")
+
     def test_palette_has_the_same_tokens_in_light_and_dark(self):
         from vifte.gui.look import PALETTE, STATUS_COLORS, palette_css
         self.assertEqual(set(PALETTE["dark"]), set(PALETTE["light"]))

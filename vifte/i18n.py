@@ -35,6 +35,7 @@ EN = {
     "Pause styring (BIOS overtar)": "Pause control (BIOS takes over)",
     "Innstillinger …": "Settings …",
     "Innstillinger": "Settings",
+    "Detaljer": "Details",
     "Oversikt": "Overview",
     "Temperaturer og vifter akkurat nå": "Temperatures and fans right now",
     "Lagring": "Storage",
