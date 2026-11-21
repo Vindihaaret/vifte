@@ -4,8 +4,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/curves-dark.png">
-    <img alt="Vifte showing fan curves for CPU, GPU, case fans and pump" src="docs/screenshots/curves-light.png" width="820">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+    <img alt="Vifte's overview: CPU, GPU, motherboard and storage temperatures, a 30-minute graph, fans and protection" src="docs/screenshots/overview-light.png" width="820">
   </picture>
 </p>
 
@@ -22,8 +22,8 @@ etc.), so configurations can be moved between Windows and Linux.
 * **Emergency mode**: above a set CPU/GPU temperature every controlled fan runs at 100 %.
 * **Sensor loss protection**: if a curve's sensor stops responding, its fans run at a safe speed instead
   of staying where they were.
-* **Optional temperature alerts** as desktop notifications, and a **30-minute history graph** on every
-  sensor card.
+* **Optional temperature alerts** as desktop notifications, and a **30-minute history graph** for every
+  sensor.
 * English, Norwegian, German, French and Spanish user interface.
 * No Wine, no .NET.
 
@@ -39,7 +39,7 @@ service, the tray icon, the safety features and the Claude integration.
 
 | Light | Dark |
 |---|---|
-| ![Curve editor, light theme](docs/screenshots/curve-editor-light.png) | ![Curve editor, dark theme](docs/screenshots/curve-editor-dark.png) |
+| ![Curves: list and curve editor, light theme](docs/screenshots/curves-light.png) | ![Curves: list and curve editor, dark theme](docs/screenshots/curves-dark.png) |
 | ![Fan controls, light theme](docs/screenshots/controls-light.png) | ![Fan controls, dark theme](docs/screenshots/controls-dark.png) |
 | ![Sensors with history graphs, light theme](docs/screenshots/sensors-light.png) | ![Sensors with history graphs, dark theme](docs/screenshots/sensors-dark.png) |
 | ![Safety settings and alerts, light theme](docs/screenshots/settings-light.png) | ![Safety settings and alerts, dark theme](docs/screenshots/settings-dark.png) |
@@ -192,23 +192,26 @@ Vifte keeps every field it doesn't know about, and writes the file in the same f
 step up/down, force apply, pairing with a speed sensor (manual or automatic), calibration (RPM table and
 start/stop), hide/show, rename.
 
-**Curves:** Graph (drag points; left click adds, right click removes), Linear, Flat, Mix
-(max/min/average/sum/subtract), Trigger, Sync, Auto. Hysteresis up/down, response time up/down, ignore
-hysteresis at min/max, one-way hysteresis (older files), RPM mode (requires calibration).
+**Curves:** Graph (drag points; left click adds, right click removes – or type the values into the points
+below the graph), Linear, Flat, Mix (max/min/average/sum/subtract), Trigger, Sync, Auto. Hysteresis
+up/down, response time up/down, ignore hysteresis at min/max, one-way hysteresis (older files), RPM mode
+(requires calibration). The **Curves** page lists the curves on the left (with search) and edits the
+selected one on the right.
 
 **Custom sensors:** Mix, time average, file (`.sensor`, first line = °C), offset.
 
-**Arrange cards and groups:** on the **Sensors** and **Speeds** pages, drag a card and drop it on another
-card in the same group to move it. To move a whole group (for example the graphics card), drag it by its
+**Arrange rows and groups:** on the **Sensors** and **Speeds** pages, drag a row and drop it on another
+row in the same group to move it. To move a whole group (for example the graphics card), drag it by its
 heading (⠿) and drop it on another group; the other groups move along. Dragging down places it after the
-group you drop on, dragging up places it before. Cards never move between groups. The page scrolls by
+group you drop on, dragging up places it before. Rows never move between groups. The page scrolls by
 itself when you drag near the top or bottom. The order is stored in the configuration (the order of the
 sensor lists, as in FanControl) when you save.
 
-**Overview and colour:** an overview at the top of the window shows the CPU, GPU, fans and safety at a
-glance, and a soft window tint follows the hotter of the CPU and GPU: cool when idle, warm under load, red
-in emergency mode. Both can be turned off under **Settings → General**. Motherboard outputs with no fan
-are shown as small labels instead of full cards.
+**Overview:** the first page shows the CPU, GPU, motherboard and storage temperatures, a graph of the CPU
+and GPU over the last 30 minutes, the fans, and the protection switches. The motherboard and storage cards
+have a ⋯ menu to choose the sensor, or to show the hottest drive or all drives. Motherboard outputs with no
+fan are shown as small labels instead of full rows. A soft window tint that follows the temperature can be
+turned on under **Settings → General**.
 
 **Names:** a speed sensor you haven't named is shown with the name of the fan it is paired with (for
 example *AIO Pump* instead of *Fan #7*). This is display only – the configuration file keeps its own names,
@@ -218,7 +221,7 @@ as on Windows – and can be turned off under **Settings → General → Speeds 
 fan speed cards, update interval, pause (BIOS takes over).
 
 **System tray:** a tray icon with a menu (show window, switch configuration, pause, quit) that can also
-show sensor values as numbers, like FanControl. Click the gear on a sensor card → **Show in system tray**.
+show sensor values as numbers, like FanControl. Click a sensor on the **Sensors** page → **Show in system tray**.
 The choice is stored in `TrayIcons` in the configuration, with the same colours as on Windows. While the
 tray icon is active, closing the window keeps Vifte in the tray. The icon starts at login (can be turned
 off under **Settings → General**). GNOME needs the *AppIndicator and KStatusNotifierItem Support*
@@ -237,7 +240,7 @@ the switch and the speed are under **Settings → Safety**.
 
 **AIO and other pumps:** Linux often exposes more fan headers than FanControl on Windows can control –
 including the pump header of an AIO or custom loop. Mark the pump so nothing else can touch it: click the
-gear on its card → **Pump and Claude → Type**:
+gear on its row on the **Controls** page → **Pump and Claude → Type**:
 * **Pump – automatic** – the pump or BIOS controls it (recommended, and right for pumps that regulate themselves):
   Vifte never writes to the header, even if a configuration enables it.
 * **Pump – fixed speed**, for pumps that follow the PWM signal: a fixed speed of at least 70 %, and 100 %
@@ -254,8 +257,8 @@ above its limit for 10 seconds, and not again until it has dropped 3 °C below i
 also get a notification when emergency mode starts or a sensor stops responding. Vifte must be running
 (for example in the system tray) for notifications to appear.
 
-**History graphs:** every sensor card shows a small graph of the last 30 minutes, with the lowest and
-highest value. Useful when tuning curves by hand.
+**History graphs:** every sensor shows a small graph of the last 30 minutes; hover over it for the lowest
+and highest value. Useful when tuning curves by hand.
 
 **Suspend and resume:** after the PC wakes from sleep or hibernation, Vifte takes the fans back by
 itself. Some hwmon drivers reset `pwm_enable` on resume, which silently hands the fans to the BIOS; Vifte
@@ -306,7 +309,7 @@ vifte uninstall [--purge]  uninstall (--purge also deletes the configurations)
 
 ## Differences from the Windows version
 
-* **Colours:** the accent colour follows the desktop. `PrimaryColor`/`SecondaryColor` are kept in the file.
+* **Colours:** Vifte uses its own colours (an orange accent). `PrimaryColor`/`SecondaryColor` are kept in the file.
 * **Plugins** for FanControl (.NET) can't be loaded. File sensors cover many of the same needs.
 * **NVIDIA:** as on Windows, 0 % hands control back to the card (zero-RPM mode); otherwise the minimum
   is 30 %.
