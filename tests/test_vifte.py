@@ -988,6 +988,17 @@ class LookTests(unittest.TestCase):
         self.assertIn("@define-color accent_bg_color #C47F00;", palette_css(False))
         self.assertIn(":root { --accent-bg-color: #F0A400;", palette_css(True, css_vars=True))
 
+    def test_palette_can_follow_the_desktop_accent(self):
+        from vifte.gui.look import PALETTE, palette_css
+        for dark in (True, False):
+            css = palette_css(dark, css_vars=True, own_accent=False)
+            for name in PALETTE["dark"]:                      # alle tokens finnes fortsatt
+                self.assertIn(f"@define-color {name} ", css)
+            self.assertIn("@define-color vifte_accent @accent_bg_color;", css)
+            self.assertIn("@define-color vifte_accent_text @accent_color;", css)
+            self.assertNotIn("@define-color accent_bg_color", css)   # skrivebordets aksent overstyres ikke
+            self.assertNotIn("--accent", css)
+
 
 class PromptTests(unittest.TestCase):
     def test_every_language_has_the_whole_setup_prompt(self):

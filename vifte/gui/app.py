@@ -122,6 +122,11 @@ def link_button(label, cb):
     return b
 
 
+def accent_supported():
+    """Skrivebordets aksentfarge finnes fra libadwaita 1.6 (GNOME 47)."""
+    return (Adw.get_major_version(), Adw.get_minor_version()) >= (1, 6)
+
+
 class StatusChip(Gtk.Box):
     """«● Rolig»-merket. Statusfargen står alltid sammen med tekst."""
     def __init__(self):
@@ -823,6 +828,11 @@ class MainWindow(Adw.ApplicationWindow):
             set_setting("overview_disk_mode", key)
         button.set_popover(self.choice_popover(items, current, chosen))
 
+    def set_system_accent(self, on):
+        from ..i18n import set_setting
+        set_setting("system_accent", on)
+        self.get_application().apply_palette()
+
     def set_tint(self, on):
         from ..i18n import set_setting
         set_setting("tint_enabled", on)
@@ -1335,7 +1345,10 @@ class MainWindow(Adw.ApplicationWindow):
         return row
 
     def accent_text(self):
-        """Aksentfargen for tekst i lys/mørk modus (til Pango-markup)."""
+        """Aksentfargen for tekst (til Pango-markup): Vifte-oransje eller skrivebordets aksent."""
+        ok, c = self.get_style_context().lookup_color("vifte_accent_text")
+        if ok:
+            return "#{:02X}{:02X}{:02X}".format(*(round(x * 255) for x in (c.red, c.green, c.blue)))
         return PALETTE["dark" if Adw.StyleManager.get_default().get_dark() else "light"]["vifte_accent_text"]
 
     def add_curve(self, kind):
@@ -1989,6 +2002,12 @@ class MainWindow(Adw.ApplicationWindow):
         from ..i18n import get_setting as setting
         g.add(switch_row(_("Farge følger temperaturen"), setting("tint_enabled", False), self.set_tint,
                          _("Svak fargetone i vinduet: kjølig ved tomgang, varm under last, rød i nødmodus")))
+        accent = switch_row(_("Bruk skrivebordets aksentfarge"),
+                            accent_supported() and setting("system_accent", True), self.set_system_accent,
+                            _("Av: Vifte bruker sin egen oransje") if accent_supported()
+                            else _("Krever GNOME 47 (libadwaita 1.6) eller nyere"))
+        accent.set_sensitive(accent_supported())
+        g.add(accent)
         g.add(switch_row(_("Fahrenheit"), self.model.fahrenheit, self.set_fahrenheit,
                          _("Vis temperaturer i °F i stedet for °C")))
         g.add(switch_row(_("Hastigheter bruker viftenavnet"), self.model.names_follow_pairing,
@@ -2386,6 +2405,9 @@ class App(Adw.Application):
         Gtk.StyleContext.add_provider_for_display(display, self.palette, 800)
         sm = Adw.StyleManager.get_default()
         sm.connect("notify::dark", lambda *_a: self.apply_palette())
+        if accent_supported():
+            # CSS-en følger aksentfargen selv; grafene tegnes på nytt
+            sm.connect("notify::accent-color", lambda *_a: self.apply_palette())
         self.apply_palette()
         # ikonene følger med pakken, så de finnes også når programmet kjøres fra kildekoden
         Gtk.IconTheme.get_for_display(display).add_search_path(ICON_DIR)
@@ -2403,10 +2425,21 @@ class App(Adw.Application):
             self.tray = None
 
     def apply_palette(self):
+        from ..i18n import get_setting
         css_vars = (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16)
-        self.palette.load_from_string(palette_css(Adw.StyleManager.get_default().get_dark(), css_vars))
-        if self.window:
-            self.window.queue_draw()
+        own = not (accent_supported() and get_setting("system_accent", True))
+        self.palette.load_from_string(palette_css(Adw.StyleManager.get_default().get_dark(), css_vars, own))
+        # grafene tegnes med Cairo og må tegnes på nytt for å få de nye fargene
+        for win in self.get_windows():
+            stack = [win]
+            while stack:
+                w = stack.pop()
+                if isinstance(w, Gtk.DrawingArea):
+                    w.queue_draw()
+                c = w.get_first_child()
+                while c:
+                    stack.append(c)
+                    c = c.get_next_sibling()
 
     def show_window(self):
         if self.window is None:

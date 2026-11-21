@@ -34,17 +34,23 @@ STATUS_COLORS = {"vifte_calm": "#2EC27E", "vifte_warm": "#E5A50A", "vifte_hot": 
                  "vifte_emergency": "#E01B24"}
 
 
-def palette_css(dark, css_vars=False):
-    """CSS med fargetokens og Vifte-oransje som aksent. css_vars: GTK ≥ 4.16, der libadwaita (≥ 1.6)
-    leser aksenten fra CSS-variabler i stedet for @define-color."""
+def palette_css(dark, css_vars=False, own_accent=True):
+    """CSS med fargetokens. own_accent: Vifte-oransje som aksent; ellers følger aksenten skrivebordet
+    (GNOME 47 / libadwaita ≥ 1.6), og Vifte sine aksenttokens peker på den.
+    css_vars: GTK ≥ 4.16, der libadwaita (≥ 1.6) leser aksenten fra CSS-variabler i stedet for @define-color."""
     colors = {**PALETTE["dark" if dark else "light"], **STATUS_COLORS}
+    if not own_accent:
+        colors["vifte_accent"] = "@accent_bg_color"
+        colors["vifte_accent_text"] = "@accent_color"
+        colors["vifte_selected"] = f"alpha(@accent_bg_color, {0.20 if dark else 0.16})"
     lines = [f"@define-color {name} {value};" for name, value in colors.items()]
-    accent, text = colors["vifte_accent"], colors["vifte_accent_text"]
-    lines += [f"@define-color accent_bg_color {accent};", f"@define-color accent_color {text};",
-              f"@define-color accent_fg_color {ACCENT_FG};"]
-    if css_vars:
-        lines.append(f":root {{ --accent-bg-color: {accent}; --accent-color: {text}; "
-                     f"--accent-fg-color: {ACCENT_FG}; }}")
+    if own_accent:
+        accent, text = colors["vifte_accent"], colors["vifte_accent_text"]
+        lines += [f"@define-color accent_bg_color {accent};", f"@define-color accent_color {text};",
+                  f"@define-color accent_fg_color {ACCENT_FG};"]
+        if css_vars:
+            lines.append(f":root {{ --accent-bg-color: {accent}; --accent-color: {text}; "
+                         f"--accent-fg-color: {ACCENT_FG}; }}")
     return "\n".join(lines) + "\n"
 
 

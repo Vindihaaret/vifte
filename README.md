@@ -309,7 +309,8 @@ vifte uninstall [--purge]  uninstall (--purge also deletes the configurations)
 
 ## Differences from the Windows version
 
-* **Colours:** Vifte uses its own colours (an orange accent). `PrimaryColor`/`SecondaryColor` are kept in the file.
+* **Colours:** Vifte uses its own colours. The accent follows the desktop accent colour (GNOME 47 or newer), or
+  Vifte's own orange if you turn that off under *Settings › General*. `PrimaryColor`/`SecondaryColor` are kept in the file.
 * **Plugins** for FanControl (.NET) can't be loaded. File sensors cover many of the same needs.
 * **NVIDIA:** as on Windows, 0 % hands control back to the card (zero-RPM mode); otherwise the minimum
   is 30 %.
