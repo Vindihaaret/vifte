@@ -6,7 +6,7 @@
 <title>Vifte – prototype</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <style>
-:root { --cpu:#7AA2D2; --gpu:#D29A6C; --cpu-b:#34506E; --gpu-b:#9A6236; --fan:#7AA2D2; --fan-b:#34506E; --neutral:#DCDEE3; --idle:rgba(220,222,227,0.38); --acc:#F0A400; --acctext:#F5B83D; --calm:#2EC27E; --warm:#E5A50A; --hot:#E66100; --emerg:#E01B24; }
+:root { --cpu:#7AA2D2; --gpu:#D29A6C; --cpu-b:#34506E; --gpu-b:#9A6236; --fan:#7AA2D2; --fan-b:#34506E; --neutral:#DCDEE3; --idle:rgba(220,222,227,0.38); --neutral-b:#4A505C; --acc:#F0A400; --acctext:#F5B83D; --calm:#2EC27E; --warm:#E5A50A; --hot:#E66100; --emerg:#E01B24; }
 body[data-theme="dark"] {
   --bg: radial-gradient(75% 65% at 88% -12%, rgba(96,128,190,0.20) 0%, transparent 70%), radial-gradient(55% 45% at 0% 100%, rgba(70,90,130,0.12) 0%, transparent 70%), linear-gradient(165deg, #141821 0%, #0D1016 55%, #090B10 100%);
   --side: rgba(255,255,255,0.075); --card: rgba(255,255,255,0.055); --solid:#161A22; --popover:#1E222B; --text:#F5F5F7; --sub:#B4B8C2;
@@ -15,7 +15,7 @@ body[data-theme="dark"] {
   --glow: 26; color-scheme: dark;
 }
 body[data-theme="light"] {
-  --cpu:#2F5A8A; --gpu:#9A5B26; --cpu-b:#34506E; --gpu-b:#9A6236; --fan:#2F5A8A; --fan-b:#34506E; --neutral:#2E3138; --idle:rgba(46,49,56,0.32);  --acc:#C47F00; --acctext:#8F5D00;
+  --cpu:#2F5A8A; --gpu:#9A5B26; --cpu-b:#34506E; --gpu-b:#9A6236; --fan:#2F5A8A; --fan-b:#34506E; --neutral:#2E3138; --idle:rgba(46,49,56,0.32); --neutral-b:#5B616C;  --acc:#C47F00; --acctext:#8F5D00;
   --bg: radial-gradient(75% 65% at 88% -12%, rgba(120,150,205,0.22) 0%, transparent 70%), linear-gradient(165deg, #F2F4F8 0%, #E8EBF0 100%);
   --side: rgba(255,255,255,0.62); --card: rgba(255,255,255,0.66); --solid:#FFFFFF; --popover:#FFFFFF; --text:#1D1D1F; --sub:#55585E;
   --fill: rgba(0,0,0,0.055); --track: rgba(0,0,0,0.08); --line: rgba(0,0,0,0.08); --off:#C9CBD0; --sel: rgba(196,127,0,0.16);
@@ -214,6 +214,8 @@ const P = {
  chip:'<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
  gpu:'<rect x="2.5" y="6" width="19" height="11" rx="2"/><circle cx="9" cy="11.5" r="3"/><path d="M15 9.5h3.5M15 13.5h3.5M5 17v3"/>',
  grip:'<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+ board:'<rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="5" height="5" rx="1"/><path d="M15 7h2M15 10h2M7 15h10M7 18h6"/>',
+ disk:'<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h.01M11 12h.01M15 10.5v3M18 10.5v3"/>',
  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'
 };
 const ic = (n, s = 16, sw = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
@@ -228,15 +230,24 @@ const S = {
   config: "Claude", configs: ["Claude", "Stille", "Spill"],
   settings: { failsafe: true, failsafeTemp: 95, lost: true, lostSpeed: 80, alerts: true, alertSensor: "cpu", alertTemp: 85,
               showOverview: true, tint: false, trayTemps: true, autostart: true, claude: false, lang: "Norsk" },
-  temps: { cpu: 41.9, gpu: 54.0 }, hist: { cpu: mkHist(42, 2, 0), gpu: mkHist(53, 1.6, 1.3) },
+  temps: { cpu: 41.9, gpu: 54.0, mb: 33.5, nv0: 38.2, nv1: 43.1 },
+  hist: { cpu: mkHist(42, 2, 0), gpu: mkHist(53, 1.6, 1.3), mb: mkHist(33.5, .5, .4), nv0: mkHist(38.2, .7, 2.1), nv1: mkHist(43.1, .8, 3.3) },
   sensors: [
-    { id: "cpu", group: "AMD CPU", name: "Core (Tctl/Tdie)", hue: "cpu", off: 0 },
-    { id: "ccd1", group: "AMD CPU", name: "CCD1 (Tdie)", hue: "cpu", off: -4 },
-    { id: "ccdmax", group: "AMD CPU", name: "CCDs Max (Tdie)", hue: "cpu", off: -3.8 },
-    { id: "ccdavg", group: "AMD CPU", name: "CCDs Average (Tdie)", hue: "cpu", off: -4.1 },
-    { id: "gpu", group: "NVIDIA GeForce RTX 4080 SUPER", name: "GPU", hue: "gpu", off: 0 },
+    { id: "cpu", group: "AMD CPU", name: "Core (Tctl/Tdie)", hue: "cpu", base: "cpu", off: 0 },
+    { id: "ccd1", group: "AMD CPU", name: "CCD1 (Tdie)", hue: "cpu", base: "cpu", off: -4 },
+    { id: "ccdmax", group: "AMD CPU", name: "CCDs Max (Tdie)", hue: "cpu", base: "cpu", off: -3.8 },
+    { id: "ccdavg", group: "AMD CPU", name: "CCDs Average (Tdie)", hue: "cpu", base: "cpu", off: -4.1 },
+    { id: "gpu", group: "NVIDIA GeForce RTX 4080 SUPER", name: "GPU", hue: "gpu", base: "gpu", off: 0 },
+    { id: "mb_sys", group: "Hovedkort (NCT6799)", name: "SYSTIN", hue: "neutral", base: "mb", off: 0, board: true },
+    { id: "mb_cpu", group: "Hovedkort (NCT6799)", name: "CPUTIN", hue: "neutral", base: "mb", off: 4.5, board: true },
+    { id: "ec_mb", group: "ASUS EC", name: "Motherboard", hue: "neutral", base: "mb", off: 1.2, board: true },
+    { id: "ec_chip", group: "ASUS EC", name: "Chipset", hue: "neutral", base: "mb", off: 14.8, board: true },
+    { id: "ec_vrm", group: "ASUS EC", name: "VRM", hue: "neutral", base: "mb", off: 6.3, board: true },
+    { id: "nv0", group: "NVMe 0 (Samsung SSD 990 PRO 2TB)", name: "Composite", hue: "neutral", base: "nv0", off: 0, disk: "Samsung 990 PRO 2TB" },
+    { id: "nv1", group: "NVMe 1 (Samsung SSD 980 PRO 1TB)", name: "Composite", hue: "neutral", base: "nv1", off: 0, disk: "Samsung 980 PRO 1TB" },
     { id: "mix", group: "Egne sensorer", name: "Maks (CPU, GPU)", hue: "acc", custom: true },
   ],
+  boardSensor: "mb_sys", diskMode: "hottest", diskPick: "nv0",
   curves: [
     { name: "CPU", type: "Graf", src: "cpu", pts: [[50,22],[65,30],[75,50],[82,75],[88,95],[92,100]], up: 2, down: 4, resp: 2 },
     { name: "GPU", type: "Graf", src: "gpu", pts: [[40,30],[60,40],[75,70],[85,100]], up: 2, down: 4, resp: 2 },
@@ -259,7 +270,7 @@ S.fans.forEach(f => S.rpmHist[f.id] = Array(40).fill(0));
 try { const t = localStorage.getItem("vifte-proto-theme"); if (t) S.theme = t; } catch (e) {}
 
 // ---------- logic ----------
-function srcTemp(src) { const s = S.sensors.find(x => x.id === src) || { off: 0, id: src }; const base = s.hue === "gpu" ? S.temps.gpu : S.temps.cpu; return s.id === "mix" ? Math.max(S.temps.cpu, S.temps.gpu) : base + (s.off || 0); }
+function srcTemp(src) { const s = S.sensors.find(x => x.id === src) || { off: 0, id: src, base: "cpu" }; return sensorVal(s); }
 function interp(pts, t) {
   if (!pts.length) return 0;
   if (t <= pts[0][0]) return pts[0][1];
@@ -305,9 +316,9 @@ function controlledCount() { return S.fans.filter(f => f.on && f.curve && !f.pum
 function fanAvg() { const v = S.fans.filter(f => f.on && f.curve && !f.pump).map(f => S.out[f.id]); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
 
 function tick() {
-  const tgt = S.load ? { cpu: 84, gpu: 76 } : { cpu: 42, gpu: 54 };
-  for (const k of ["cpu", "gpu"]) {
-    S.temps[k] += (tgt[k] - S.temps[k]) * 0.12 + (Math.random() - .5) * 0.8;
+  const tgt = S.load ? { cpu: 84, gpu: 76, mb: 39, nv0: 47, nv1: 54 } : { cpu: 42, gpu: 54, mb: 33.5, nv0: 38.2, nv1: 43.1 };
+  for (const k of Object.keys(tgt)) {
+    S.temps[k] += (tgt[k] - S.temps[k]) * (k === "cpu" || k === "gpu" ? 0.12 : 0.04) + (Math.random() - .5) * (k === "cpu" || k === "gpu" ? 0.8 : 0.25);
     S.hist[k].push(S.temps[k]); S.hist[k].shift();
   }
   computeOut();
@@ -371,18 +382,35 @@ function sidebar() {
 }
 
 // ---------- pages ----------
+function boardTile() {
+  const s = sensorById(S.boardSensor), v = sensorVal(s);
+  return `<div class="card tile"><div class="hd"><span>${badge("neutral", "board")}Hovedkort</span><span style="display:flex;align-items:center;gap:6px"><span data-live="chip-board">${chip(heat(v))}</span><button class="iconbtn" style="width:26px;height:26px" data-act="pickboard" aria-label="Velg sensor for hovedkort" aria-haspopup="menu">${ic("more", 15)}</button></span></div>
+   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="big" data-live="t-board">${fmt(v)}<small> °C</small></div><span data-live="sp-board">${sparkSVG(sensorHist(s, 30), "var(--neutral)", 84, 36, "board")}</span></div><div class="foot" style="margin-top:-6px">${esc(s.group.replace(/ \(.*\)/, ""))} · ${esc(s.name)}</div></div>`;
+}
+function diskInner() {
+  const list = shownDisks(), n = disks().length;
+  if (list.length === 1) { const d = list[0], v = sensorVal(d);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="big">${fmt(v)}<small> °C</small></div>${sparkSVG(sensorHist(d, 30), "var(--neutral)", 84, 36, "disk")}</div>
+    <div class="foot" style="margin-top:-6px">${esc(d.disk)}${S.diskMode === "hottest" && n > 1 ? ` · varmest av ${n}` : ""}</div>`; }
+  return `<div style="display:flex;flex-direction:column;gap:7px;margin-top:2px">${list.map(d => { const v = sensorVal(d); return `<div style="display:flex;align-items:center;gap:8px"><span class="grow" style="font-size:12.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.disk.replace("Samsung ", ""))}</span><span data-heat style="width:6px;height:6px;border-radius:99px;flex-shrink:0;background:${HEAT_VAR[heat(v)]}" aria-hidden="true"></span><b class="tnum" style="font-size:16px;width:64px;text-align:right">${fmt(v)} °C</b></div>`; }).join("")}</div>`;
+}
+function diskTile() {
+  const hot = Math.max(...shownDisks().map(sensorVal));
+  return `<div class="card tile"><div class="hd"><span>${badge("neutral", "disk")}Lagring</span><span style="display:flex;align-items:center;gap:6px"><span data-live="chip-disk">${chip(heat(hot))}</span><button class="iconbtn" style="width:26px;height:26px" data-act="pickdisk" aria-label="Velg hvilke disker som vises" aria-haspopup="menu">${ic("more", 15)}</button></span></div><div data-live="diskinner">${diskInner()}</div></div>`;
+}
 function pageOverview() {
   const avg = fanAvg(), [st, t1, t2] = safety();
   const sc = st === "ok" ? "calm" : st === "emergency" ? "emergency" : "warm";
   const tile = (hue, icon, label, k, foot) => `<div class="card tile"><div class="hd"><span>${badge(hue, icon)}${label}</span><span data-live="chip-${k}">${chip(heat(S.temps[k]))}</span></div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="big" data-live="t-${k}">${fmt(S.temps[k])}<small> °C</small></div><span data-live="sp-${k}">${sparkSVG(S.hist[k].slice(-30), `var(--${hue})`, 84, 36, k)}</span></div><div class="foot" style="margin-top:-6px">${foot}</div></div>`;
   return header("Oversikt", "Temperaturer og vifter akkurat nå") + banner() + `<div class="content">
-  <div class="grid4">${tile("cpu", "chip", "CPU", "cpu", "AMD CPU · Core (Tctl/Tdie)")}${tile("gpu", "gpu", "GPU", "gpu", "RTX 4080 SUPER")}
-   <div class="card tile"><div class="hd"><span>${badge("fan", "fan")}Vifter</span></div><div><div class="big" data-live="fanavg">${avg == null ? "–" : Math.round(avg)}<small> %</small></div><div class="foot">${controlledCount()} styrt · Pumper: 1</div></div></div>
-   <div class="card tile" data-live="safetytile"><div class="hd"><span>${`<span class="badge" style="background:${HEAT_VAR[sc]}">${ic("shield", 14, 2)}</span>`}Sikkerhet</span></div><div><div style="font-size:20px;font-weight:700;letter-spacing:-.3px;line-height:1.5">${t1}</div><div class="foot">${t2}</div></div></div></div>
+  <div class="grid4">${tile("cpu", "chip", "CPU", "cpu", "AMD CPU · Core (Tctl/Tdie)")}${tile("gpu", "gpu", "GPU", "gpu", "RTX 4080 SUPER")}${boardTile()}${diskTile()}</div>
   <section class="card" style="padding:16px 20px 12px"><div class="sechd"><h2>Temperatur <span>· siste 30 minutter</span></h2><div class="legend"><span><i style="background:var(--cpu)"></i>CPU</span><span><i style="background:var(--gpu)"></i>GPU</span></div></div><div data-live="bigchart">${bigChart()}</div></section>
-  <div class="row2"><section class="card"><div class="sechd"><h2>Vifter</h2><button class="link" data-nav="controls">Kontroller${ic("chev", 13, 2.2)}</button></div><div data-live="fanlist">${fanMini()}</div></section>
+  <div class="row2"><section class="card"><div class="sechd"><h2>Vifter</h2><button class="link" data-nav="controls">Kontroller${ic("chev", 13, 2.2)}</button></div>
+   <div style="display:flex;align-items:baseline;gap:10px;padding:2px 0 8px;border-bottom:0.5px solid var(--line);margin-bottom:4px"><span class="big" style="font-size:26px" data-live="fanavg">${avg == null ? "–" : Math.round(avg)}<small> %</small></span><span class="sub">snitt av styrte vifter · ${controlledCount()} styrt · Pumper: 1</span></div>
+   <div data-live="fanlist">${fanMini()}</div></section>
   <section class="card"><div class="sechd"><h2>Beskyttelse</h2><button class="link" data-nav="settings" data-setpage="safety">Innstillinger${ic("chev", 13, 2.2)}</button></div>
+   <div style="display:flex;align-items:center;gap:12px;padding:2px 0 10px;border-bottom:0.5px solid var(--line)"><span class="badge" style="width:34px;height:34px;border-radius:10px;background:${HEAT_VAR[sc]}">${ic(st === "ok" ? "shield" : "warn", 18, 2)}</span><div><div style="font-size:17px;font-weight:700;letter-spacing:-.2px">${t1}</div><div class="sub">${t2}</div></div></div>
    <div class="srow"><div class="t"><b>Nødmodus</b><span class="sub">Alle styrte vifter på 100 % ved ${S.settings.failsafeTemp} °C</span></div>${sw("failsafe", S.settings.failsafe, "Nødmodus")}</div>
    <div class="srow"><div class="t"><b>Sikring ved sensortap</b><span class="sub">${S.settings.lostSpeed} % hvis en kurves sensor forsvinner</span></div>${sw("lost", S.settings.lost, "Sikring ved sensortap")}</div>
    <div class="srow"><div class="t"><b>Styring</b><span class="sub">${S.paused ? "BIOS styrer viftene" : "Vifte styrer viftene"}</span></div><button class="btn" data-act="pause">${ic(S.paused ? "play" : "pause", 13)}${S.paused ? "Fortsett" : "Pause"}</button></div></section></div></div>`;
@@ -398,7 +426,7 @@ function banner() {
   return `<div class="banner">${ic("warn", 18, 2.2)} Nødmodus: temperaturen er over ${S.settings.failsafeTemp} °C – alle styrte vifter går på 100 %</div>`;
 }
 function groups(list) { const m = new Map(); list.forEach(x => { if (!m.has(x.group)) m.set(x.group, []); m.get(x.group).push(x); }); return [...m]; }
-const groupBadge = g => g.startsWith("NVIDIA") ? badge("gpu", "gpu", 22) : g.startsWith("AMD") ? badge("cpu", "chip", 22) : g.startsWith("Egne") ? badge("acc", "spark", 22) : badge("fan", "chip", 22);
+const groupBadge = g => g.startsWith("NVIDIA") ? badge("gpu", "gpu", 22) : g.startsWith("AMD") ? badge("cpu", "chip", 22) : g.startsWith("Egne") ? badge("acc", "spark", 22) : g.startsWith("NVMe") ? badge("neutral", "disk", 22) : (g.startsWith("ASUS") || g.startsWith("Hovedkort")) && S.page === "sensors" ? badge("neutral", "board", 22) : badge("fan", "board", 22);
 function pageControls() {
   return header("Kontroller", `${S.fans.length} vifter · ${controlledCount()} styrt av Vifte`) + banner() + `<div class="content">` + groups(S.fans).map(([g, fans]) => `<section><h2 class="group-title"><span class="grip" title="Dra for å flytte gruppen">${ic("grip", 14)}</span>${groupBadge(g)}${esc(g)}</h2><div class="inset">` +
     fans.map(f => { const act = f.on && f.curve && !S.paused, hue = act ? "var(--neutral)" : "var(--idle)";
@@ -475,8 +503,11 @@ function pageSpeeds() {
   return header("Hastigheter", "Turtall fra alle viftesensorer") + `<div class="content">` + groups(S.fans).map(([g, fans]) => `<section><h2 class="group-title"><span class="grip">${ic("grip", 14)}</span>${groupBadge(g)}${esc(g)}</h2><div class="inset">` +
     fans.map(f => `<div class="lrow"><span class="grow name" style="font-weight:500">${esc(f.name)}</span><span class="sp" data-live="rs-${f.id}">${sparkSVG(S.rpmHist[f.id], `var(--${fanHue(f)})`, 150, 28, "r" + f.id)}</span><span class="pct" style="width:110px" data-live="rv-${f.id}">${f.rpm} RPM</span><button class="iconbtn" aria-label="Detaljer" data-act="toast" data-msg="Sensordetaljer: navn, skjul kort">${ic("chev", 15)}</button></div>`).join("") + `</div></section>`).join("") + `</div>`;
 }
-function sensorVal(s) { return s.id === "mix" ? Math.max(S.temps.cpu, S.temps.gpu) : (s.hue === "gpu" ? S.temps.gpu : S.temps.cpu) + (s.off || 0); }
-function sensorHist(s) { const b = s.hue === "gpu" ? S.hist.gpu : S.hist.cpu; return s.id === "mix" ? S.hist.cpu.map((v, i) => Math.max(v, S.hist.gpu[i])).slice(-40) : b.slice(-40).map(v => v + (s.off || 0)); }
+function sensorVal(s) { return s.id === "mix" ? Math.max(S.temps.cpu, S.temps.gpu) : S.temps[s.base || "cpu"] + (s.off || 0); }
+function sensorHist(s, n = 40) { return s.id === "mix" ? S.hist.cpu.map((v, i) => Math.max(v, S.hist.gpu[i])).slice(-n) : S.hist[s.base || "cpu"].slice(-n).map(v => v + (s.off || 0)); }
+const sensorById = id => S.sensors.find(x => x.id === id);
+const disks = () => S.sensors.filter(x => x.disk);
+function shownDisks() { const d = disks(); if (S.diskMode === "all") return d; if (S.diskMode === "pick") return [sensorById(S.diskPick) || d[0]]; return [d.reduce((a, b) => sensorVal(b) > sensorVal(a) ? b : a)]; }
 function pageSensors() {
   const order = [...S.sensors].sort((a, b) => (b.custom ? 1 : 0) - (a.custom ? 1 : 0));
   return header("Sensorer", "Historikk for siste 30 minutter", `<button class="btn" data-act="toast" data-msg="Legg til egen sensor: Miks, Avvik, Fil …">${ic("plus", 14, 2.4)}Egen sensor</button>`) + `<div class="content">` + groups(order).map(([g, ss]) => `<section><h2 class="group-title"><span class="grip">${ic("grip", 14)}</span>${groupBadge(g)}${esc(g)}</h2><div class="inset">` +
@@ -493,7 +524,6 @@ function pageSettings() {
   if (S.setPage === "general") body =
     sec("Språk / Language", row("Språk", null, `<select class="pop" data-set="lang" aria-label="Språk">${["Norsk", "English", "Deutsch", "Français", "Español"].map(l => `<option ${s.lang === l ? "selected" : ""}>${l}</option>`).join("")}</select>`)) +
     sec("Visning", row("Utseende", "Følger systemet i den ferdige appen", `<div class="seg" role="group" aria-label="Utseende"><button aria-pressed="${S.theme === "light"}" data-theme-set="light">Lys</button><button aria-pressed="${S.theme === "dark"}" data-theme-set="dark">Mørk</button></div>`) +
-      row("Vis oversiktsruter", "CPU, GPU, vifter og sikkerhet øverst på sidene", sw("set:showOverview", s.showOverview, "Vis oversiktsruter")) +
       row("Fargetone etter temperatur", "Av som standard i dette designet", sw("set:tint", s.tint, "Fargetone etter temperatur"))) +
     sec("Statusfelt", row("Vis temperaturer i statusfeltet", null, sw("set:trayTemps", s.trayTemps, "Vis temperaturer i statusfeltet"))) +
     sec("Tjeneste", row("Start Vifte ved innlogging", null, sw("set:autostart", s.autostart, "Start ved innlogging")) + row("Avinstaller Vifte", "Fjerner tjenesten og gir viftene tilbake til BIOS", `<button class="btn" style="color:var(--emerg)" data-act="toast" data-msg="Avinstallering er ikke med i prototypen">Avinstaller …</button>`));
@@ -528,6 +558,8 @@ function live() {
   if (em !== lastEm) { lastEm = em; render(); return; }
   for (const k of ["cpu", "gpu"]) { set("t-" + k, `${fmt(S.temps[k])}<small> °C</small>`); set("chip-" + k, chip(heat(S.temps[k]))); set("sp-" + k, sparkSVG(S.hist[k].slice(-30), `var(--${k})`, 84, 36, k)); }
   const avg = fanAvg(); set("fanavg", `${avg == null ? "–" : Math.round(avg)}<small> %</small>`);
+  { const bs = sensorById(S.boardSensor), bv = sensorVal(bs); set("t-board", `${fmt(bv)}<small> °C</small>`); set("chip-board", chip(heat(bv))); set("sp-board", sparkSVG(sensorHist(bs, 30), "var(--neutral)", 84, 36, "board"));
+    set("diskinner", diskInner()); set("chip-disk", chip(heat(Math.max(...shownDisks().map(sensorVal))))); }
   set("bigchart", bigChart()); set("fanlist", fanMini());
   S.fans.forEach(f => { const act = f.on && f.curve && !S.paused; set("rpm-" + f.id, act ? f.rpm + " RPM" : f.k ? "BIOS styrer" : "0 RPM"); set("pct-" + f.id, S.out[f.id] + " %");
     const b = app.querySelector(`[data-live="bar-${f.id}"]`); if (b) b.style.width = S.out[f.id] + "%";
@@ -587,6 +619,8 @@ app.addEventListener("click", e => {
     case "configs": popover(t, `<div class="ph">Konfigurasjoner</div>${S.configs.map(c => `<button role="menuitem" data-cfg="${esc(c)}">${c === S.config ? ic("check", 15, 2.4) : `<span style="width:15px"></span>`}${esc(c)}</button>`).join("")}`); break;
     case "menu": popover(t, ["Importer FanControl-konfigurasjon …", "Eksporter konfigurasjon …", "Ny tom konfigurasjon …", "Lagre som …", "Slett konfigurasjon …", "|", "Par vifter automatisk", "Koble manglende sensorer …", "Søk etter maskinvare på nytt", "|", "Åpne Stress", "|", "Vis skjulte kort", (S.paused ? "Fortsett styring" : "Pause styring (BIOS overtar)"), "Innstillinger …", "Se etter oppdateringer …", "Om Vifte", "|", "Avslutt"]
       .map(x => x === "|" ? "<hr>" : `<button role="menuitem" data-menu="${esc(x)}">${esc(x)}</button>`).join("")); break;
+    case "pickboard": popover(t, `<div class="ph">Sensor for hovedkort</div>${S.sensors.filter(x => x.board).map(x => `<button role="menuitemradio" aria-checked="${x.id === S.boardSensor}" data-board="${x.id}">${x.id === S.boardSensor ? ic("check", 15, 2.4) : `<span style="width:15px"></span>`}${esc(x.group.replace(/ \(.*\)/, ""))} · ${esc(x.name)}<span class="grow"></span><span class="sub tnum">${fmt(sensorVal(x))} °C</span></button>`).join("")}`); break;
+    case "pickdisk": popover(t, `<div class="ph">Vis i Lagring</div>${[["hottest", "Den varmeste disken"], ["all", "Alle disker"]].map(([m, l]) => `<button role="menuitemradio" aria-checked="${S.diskMode === m}" data-diskmode="${m}">${S.diskMode === m ? ic("check", 15, 2.4) : `<span style="width:15px"></span>`}${l}</button>`).join("")}<hr><div class="ph">Eller én bestemt disk</div>${disks().map(d => { const on = S.diskMode === "pick" && S.diskPick === d.id; return `<button role="menuitemradio" aria-checked="${on}" data-diskpick="${d.id}">${on ? ic("check", 15, 2.4) : `<span style="width:15px"></span>`}${esc(d.disk)}<span class="grow"></span><span class="sub tnum">${fmt(sensorVal(d))} °C</span></button>`; }).join("")}`); break;
     case "newcurve": { let n = 1; while (S.curves.some(c => c.name === "Ny kurve " + n)) n++; S.curves.push({ name: "Ny kurve " + n, type: "Graf", src: "cpu", pts: [[40, 25], [60, 40], [80, 80], [90, 100]], up: 2, down: 4, resp: 2 }); S.selCurve = S.curves.length - 1; dirty(); render(); break; }
     case "rename": { const c = S.curves[S.selCurve]; dialog(`<h3>Gi nytt navn</h3><input type="text" id="nm" value="${esc(c.name)}" aria-label="Navn"><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn" data-act="cancel">Avbryt</button><button class="btn primary" data-act="okname">Lagre</button></div>`); break; }
     case "okname": { const c = S.curves[S.selCurve], v = app.querySelector("#nm").value.trim(); if (v) { S.fans.forEach(f => { if (f.curve === c.name) f.curve = v; }); S.curves.forEach(x => { if (x.of) x.of = x.of.map(n => n === c.name ? v : n); }); c.name = v; dirty(); } closePop(); render(); break; }
@@ -594,6 +628,9 @@ app.addEventListener("click", e => {
     case "okfan": { const f = S.fans.find(x => x.id === S.fanEdit), v = app.querySelector("#nm").value.trim(); if (v) f.name = v; dirty(); closePop(); render(); break; }
     case "cancel": closePop(); break;
   }
+  if (d.board) { S.boardSensor = d.board; closePop(); render(); return; }
+  if (d.diskmode) { S.diskMode = d.diskmode; closePop(); render(); return; }
+  if (d.diskpick) { S.diskMode = "pick"; S.diskPick = d.diskpick; closePop(); render(); return; }
   if (d.cfg) { S.config = d.cfg; S.dirty = false; closePop(); render(); toast(`Byttet til «${d.cfg}»`); }
   if (d.menu) { closePop(); if (d.menu.startsWith("Pause") || d.menu.startsWith("Fortsett")) { S.paused = !S.paused; render(); } else if (d.menu === "Innstillinger …") { S.prev = S.page; S.page = "settings"; render(); } else toast(d.menu.replace(" …", "") + " – ikke med i prototypen"); }
 });

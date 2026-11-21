@@ -21,7 +21,8 @@ Prototypen er HTML/CSS, ikke GTK. Bruk den som fasit for **hva** det skal se ut 
    standard i GNOME. Font: systemfonten (Adwaita Sans i GNOME 48+, som bygger på Inter).
 2. **Navigasjon i sidefelt til venstre** i stedet for `Adw.ViewSwitcher` øverst.
    Rekkefølge: Oversikt, Kontroller, Kurver, Hastigheter, Sensorer. Nederst: statuskort og Innstillinger.
-3. **Ny side: Oversikt** (første side). Samler det som i dag er oversiktsrutene øverst på hver side.
+3. **Ny side: Oversikt** (første side). Fire temperaturkort øverst (CPU, GPU, Hovedkort, Lagring), stor
+   historikkgraf, og nederst kortene Vifter og Beskyttelse. Se beslutning 14.
 4. **Glass, men statisk:** nesten-sort (mørk) / lys gråblå (lys) bakgrunn med et svakt blått skjær øverst til
    høyre. Kort og sidefelt er halvgjennomsiktige med en tynn lys kant øverst. **Ingen uskarphet** (GTK har
    ikke `backdrop-filter`).
@@ -33,8 +34,9 @@ Prototypen er HTML/CSS, ikke GTK. Bruk den som fasit for **hva** det skal se ut 
    - Vifte-oransje = aksent (Lagre, brytere, valgt side)
    - Statusfarger (grønn/gul/oransje/rød) brukes bare for tilstand, alltid sammen med tekst.
 7. **Oversiktskortene er nøytrale.** Ingen fargenyanse i bakgrunnen. Farge bare i det lille ikonet og i
-   sparkline. Sikkerhet-kortet: bare ikonet skifter farge (grønn = i orden, gul = pause/nødmodus av,
-   rød = nødmodus).
+   sparkline: CPU marineblå, GPU kobber, Hovedkort og Lagring nøytral grå (`#4A505C` mørk / `#5B616C` lys,
+   sparkline i `vifte_neutral`). Sikkerhetsstatusen står øverst i Beskyttelse-kortet; der skifter bare
+   ikonet farge (grønn = i orden, gul = pause/nødmodus av/sensor borte, rød = nødmodus).
 8. **Viftelister er nøytrale:** hvitgrå ikoner og stolper i mørk modus, nesten sort i lys. Vifter som ikke
    styres (BIOS) får svakere tone + teksten «BIOS styrer». Gjelder både Oversikt og Kontroller.
 9. **Dialoger forblir rolige og ugjennomsiktige** (som i dag). Glasset gjelder hovedvinduet.
@@ -50,6 +52,25 @@ Prototypen er HTML/CSS, ikke GTK. Bruk den som fasit for **hva** det skal se ut 
     stedet for %, og i Fahrenheit-modus °F.
 13. **Temperaturaksen** (min/maks, i dag gruppen «Akse» i `CurveDialog`) beholdes, som to stegvelgere under
     punktene.
+14. **Temperaturkortene på Oversikt** (endret 21. november):
+    - **CPU** og **GPU** som før (`auto_tray_sensor("cpu"/"gpu")`).
+    - **Hovedkort:** viser én hovedkortsensor. ⋯-knappen i kortet åpner en meny med alle temperatursensorer
+      fra hovedkortbrikker (id-er som begynner med `/lpc/`, `/hwmon/asusec/`, `/hwmon/asus_wmi_sensors/`).
+      Standard: første sensor med navn «Motherboard», ellers «SYSTIN», ellers første hovedkortsensor.
+      Valget lagres i `settings.json` som `overview_board_sensor` (sensor-id).
+    - **Lagring:** disker = temperatursensorer med id som begynner med `/nvme/` eller `/hdd/` (vis modellnavnet
+      fra gruppetittelen, f.eks. «Samsung 990 PRO 2TB»). ⋯-menyen har tre valg: *Den varmeste disken*
+      (standard; undertekst «varmest av N»), *Alle disker* (én linje per disk med navn, statusprikk og verdi)
+      og *én bestemt disk*. Lagres som `overview_disk_mode` (`hottest` / `all` / `pick`) og
+      `overview_disk_pick` (sensor-id).
+    - Finnes ingen slik sensor, viser kortet «Ingen sensor funnet» og menyen lar deg velge en hvilken som helst
+      temperatursensor.
+    - Statusmerket (Rolig/Varm/Het) bruker de samme tersklene som CPU/GPU.
+    - **Snitt viftehastighet** flyttes til toppen av Vifter-kortet nederst: stort tall + «snitt av styrte vifter
+      · N styrt · Pumper: N» (samme tall som dagens `fan_summary`).
+    - **Sikkerhet** flyttes til toppen av Beskyttelse-kortet: ikon + tekst fra `safety_state()`.
+    - De to valgmenyene er nye innstillinger – et bevisst, lite unntak fra «ingen nye funksjoner».
+    Velgerlogikken (standardvalg, varmeste disk) legges i `look.py` så den kan testes uten skjerm.
 
 ### Åpne spørsmål (avklares før/under fase 2)
 (Ingen – alle er avklart.)
@@ -139,13 +160,14 @@ Til slutt «Innstillinger».
 innhold som dagens `Gio.Menu`), Lagre (aksentfarge når `dirty`), lukk.
 
 **Oversikt**
-- Fire kort: CPU, GPU, Vifter, Sikkerhet. Samme data som dagens `update_overview()`.
-  CPU/GPU: ikonflate + navn, statusmerke (Rolig/Varm/Het), stort tall, sparkline (eksisterende `Sparkline`),
-  undertekst med sensornavn. Vifter: snitt % + «N styrt · Pumper: N». Sikkerhet: tekst fra `safety_state()`.
+- Fire temperaturkort: CPU, GPU, Hovedkort, Lagring (se beslutning 14). Hvert kort: ikonflate + navn,
+  statusmerke (Rolig/Varm/Het), stort tall, sparkline (eksisterende `Sparkline`), undertekst med sensornavn.
+  Hovedkort og Lagring har en ⋯-knapp for valg av sensor/visning.
 - Stort graf-kort: «Temperatur · siste 30 minutter», CPU og GPU fra `history` (finnes i daemon, 360 punkter),
   stiplet nødlinje når nødmodus er på og grensen er innenfor aksen. Ny `Gtk.DrawingArea`-klasse i `graph.py`.
-- Nederst to kort: «Vifter» (nøytral liste, lenke til Kontroller) og «Beskyttelse» (brytere for nødmodus og
-  sikring ved sensortap – samme innstillinger som i Innstillinger – og Pause/Fortsett, lenke til Innstillinger).
+- Nederst to kort: «Vifter» (øverst snitt % for styrte vifter, så nøytral liste, lenke til Kontroller) og
+  «Beskyttelse» (øverst sikkerhetsstatus med farget ikon, så brytere for nødmodus og sikring ved sensortap –
+  samme innstillinger som i Innstillinger – og Pause/Fortsett, lenke til Innstillinger).
 
 **Kontroller** – dagens kort blir grupperte lister (`Adw.PreferencesGroup`-lignende inset-lister) per maskinvare.
 Rad: nøytralt vifteikon, navn + RPM/«BIOS styrer», kurvevelger, prosent, stolpe, bryter, tannhjul
@@ -171,7 +193,7 @@ Endring: «Farge følger temperaturen» er av som standard.
 | Lys/mørk | `apply_style_mode()` (klassen `vifte-light`) | Behold mønsteret; legg til høykontrast-sjekk. |
 | Fargetone | `update_tint()`, `set_tint()`, `get_setting("tint_enabled", True)` | Standard `False` (to steder: `update_tint` og innstillingsraden ca. linje 1450). |
 | Navigasjon | `MainWindow.__init__`: `Adw.ViewStack` + `Adw.ViewSwitcher` + `Adw.ViewSwitcherBar` + breakpoint | `Adw.NavigationSplitView` med `Gtk.ListBox` (`navigation-sidebar`) i sidefeltet; behold `ViewStack` som innhold. Sidefeltet kollapser på smal skjerm (breakpoint). |
-| Oversikt | `build_overview()`, `update_overview()`, `Tile`, `set_overview()` | Bygg Oversikt-side; gjenbruk logikken i `update_overview()` og `look.py`. Fjern rutene fra de andre sidene og innstillingen `overview_enabled`. |
+| Oversikt | `build_overview()`, `update_overview()`, `Tile`, `set_overview()`, `auto_tray_sensor()` | Bygg Oversikt-side; gjenbruk logikken i `update_overview()` og `look.py`. `tile_fans`/`tile_safety` erstattes av Hovedkort og Lagring; snitt og sikkerhet flyttes til kortene nederst. Nye velgere i `look.py` (testes). Fjern rutene fra de andre sidene og innstillingen `overview_enabled`. |
 | Grafer | `graph.py`: `Sparkline`, `CurveGraph`, `_color()` | Sparkline får fargeparameter (cpu/gpu/neutral) i stedet for alltid `accent_color`. Ny graf for CPU+GPU-historikk. |
 | Kontroller | `build_controls()` | Kort → listerader. |
 | Kurver | `build_curves()`, `CurveDialog` (`dialogs.py`) | Liste + detalj; gjenbruk byggefunksjonene i `CurveDialog` (`build_graph`, `build_linear` …). Punkt-merkene blir redigerbare (`Gtk.SpinButton` eller `Gtk.Entry` med validering i hvert merke) – se beslutning 12. |
