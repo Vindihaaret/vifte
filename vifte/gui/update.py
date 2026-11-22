@@ -11,7 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from .. import __version__, updater  # noqa: E402
+from .. import __version__, debuglog, updater  # noqa: E402
 from ..i18n import _, get_setting, set_setting  # noqa: E402
 
 FIRST_CHECK_DELAY = 60          # s etter oppstart (nettet er kanskje ikke oppe ved innlogging)
@@ -76,6 +76,7 @@ class UpdateManager:
         self._busy = False
         if err is not None:
             print("oppdateringssjekk feilet:", err, file=sys.stderr)
+            debuglog.error("update check failed: %s", err)
             if manual:
                 self._message(_("Kunne ikke se etter oppdateringer"), _("Feil: {}").format(err))
             return False
@@ -167,6 +168,7 @@ class UpdateManager:
 
         def downloaded(src, err):
             if err is not None:
+                debuglog.error("update download failed: %s", err)
                 finish(_("Oppdateringen feilet"), _("Feil: {}").format(err))
                 return False
             state["src"] = src
@@ -185,6 +187,7 @@ class UpdateManager:
                 _ok, out, _err = proc.communicate_utf8_finish(res)
             except GLib.Error as ex:
                 out = ex.message
+            debuglog.command(["pkexec", "install.sh", info["tag"]], proc.get_exit_status(), out)
             if proc.get_successful():
                 finish()
                 self._restart_dialog(info)

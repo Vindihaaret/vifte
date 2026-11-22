@@ -320,6 +320,10 @@ vifte uninstall [--purge]  uninstall (--purge also deletes the configurations)
 ## Troubleshooting
 
 * `journalctl -u vifted -f` shows the service log.
+* For problems in the app itself, turn on *Settings → General → Debug log*. The window, the tray icon, the MCP
+  server for Claude and the command line then write what they do (calls to the service with their answers or
+  errors, updates and unexpected errors) to `~/.local/state/vifte/logs/vifte-<date>.log`. *Copy latest log* puts
+  it on the clipboard. Logs are deleted after 14 days.
 * No motherboard fans? Check `cat /sys/class/hwmon/hwmon*/name` for an `nct…` or `it…` chip.
   * Many boards need `acpi_enforce_resources=lax` on the kernel command line before `nct6775`/`it87` can
     load.

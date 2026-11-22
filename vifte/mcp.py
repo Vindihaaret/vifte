@@ -110,6 +110,8 @@ class Server:
                     self.handle(m)
                 except Exception as ex:  # en feil skal aldri ta ned serveren
                     print(f"vifte mcp: {ex}", file=sys.stderr)
+                    from . import debuglog
+                    debuglog.error("mcp: %s failed", m.get("method") if isinstance(m, dict) else "?", exc=True)
                     if isinstance(m, dict) and m.get("id") is not None:
                         self.reply(m["id"], error={"code": -32603, "message": str(ex)})
 

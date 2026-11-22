@@ -1000,6 +1000,55 @@ class LookTests(unittest.TestCase):
             self.assertNotIn("--accent", css)
 
 
+class DebugLogTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.env = mock.patch.dict(os.environ, {"XDG_STATE_HOME": os.path.join(self.tmp, "state"),
+                                                "XDG_CONFIG_HOME": os.path.join(self.tmp, "config")})
+        self.env.start()
+
+    def tearDown(self):
+        from vifte import debuglog
+        for h in list(debuglog._logger.handlers):
+            debuglog._logger.removeHandler(h)
+        debuglog._ready = False
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_writes_only_when_turned_on(self):
+        from vifte import debuglog
+        from vifte.i18n import set_setting
+        with mock.patch.object(sys, "excepthook", sys.excepthook), \
+                mock.patch("threading.excepthook"), mock.patch("os.geteuid", return_value=1000):
+            debuglog.setup("test")
+            debuglog.call("load", {"name": "A"}, 3, result={"ok": True})
+            self.assertIsNone(debuglog.latest())          # av: ingenting skrives
+            set_setting("debug", True)
+            debuglog.refresh()
+            debuglog.call("state", {}, 2, result={"big": 1})          # hyppige kall logges bare ved feil
+            debuglog.call("apply_config", {"raw": {"x": "y" * 1000}}, 12, result={"rev": 4})
+            debuglog.call("history", {}, 1, err=ConnectionError("borte"))
+            debuglog.command(["pkexec", "install.sh"], 1, "linje\n" * 100)
+            with open(debuglog.latest(), encoding="utf-8") as f:
+                text = f.read()
+        self.assertNotIn("vifted state", text)
+        self.assertIn("vifted apply_config raw=<", text)      # hele konfigurasjonen skrives ikke
+        self.assertIn("vifted history  (1 ms) → ConnectionError: borte", text)
+        self.assertIn("lines left out", text)
+        self.assertEqual(oct(os.stat(debuglog.log_dir()).st_mode & 0o777), "0o700")
+
+    def test_cleanup_deletes_old_logs(self):
+        from vifte import debuglog
+        os.makedirs(debuglog.log_dir())
+        old, new = (os.path.join(debuglog.log_dir(), n) for n in ("vifte-2026-01-01.log", "vifte-2026-11-22.log"))
+        for f in (old, new):
+            open(f, "w").close()
+        os.utime(old, (0, 0))
+        debuglog.cleanup()
+        self.assertEqual(os.listdir(debuglog.log_dir()), [os.path.basename(new)])
+        self.assertEqual(debuglog.latest(), new)
+
+
 class PromptTests(unittest.TestCase):
     def test_every_language_has_the_whole_setup_prompt(self):
         import re

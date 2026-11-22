@@ -14,7 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 from ..client import Client  # noqa: E402
 from ..config import (CURVE_TITLES, CURVE_TYPES, SENSOR_TYPES, curve_type,  # noqa: E402
                       custom_sensor_type, new_curve, new_custom_sensor, parse_point)
-from .. import __version__, i18n  # noqa: E402
+from .. import __version__, debuglog, i18n  # noqa: E402
 from ..i18n import LANGUAGES, _, language_setting, set_language_setting  # noqa: E402
 from .alerts import AlertMonitor  # noqa: E402
 from .common import (Model, StatusHero, combo_row, move_entry, move_group, spin_row, stress_path,  # noqa: E402
@@ -828,6 +828,47 @@ class MainWindow(Adw.ApplicationWindow):
             set_setting("overview_disk_mode", key)
         button.set_popover(self.choice_popover(items, current, chosen))
 
+    def build_debug_settings(self, page, dlg):
+        """Feilsøkingslogg som i Waypoint: bryter, mappen og «Kopier siste logg»."""
+        from ..i18n import get_setting, set_setting
+        g = Adw.PreferencesGroup(title=_("Feilsøking"))
+        page.add(g)
+        sw = Adw.SwitchRow(title=_("Feilsøkingslogg"), active=bool(get_setting("debug", False)),
+                           subtitle=_("Skriver det Vifte gjør til en loggfil: kall til tjenesten, oppdateringer og "
+                                      "feil. Nyttig når noe går galt. Loggene slettes etter {} dager.").format(
+                               debuglog.KEEP_DAYS))
+        sw.add_prefix(Gtk.Image(icon_name="utilities-terminal-symbolic"))
+
+        def toggled(row, _p):
+            set_setting("debug", row.get_active())
+            debuglog.refresh()
+            if row.get_active():
+                debuglog.started("window")
+                debuglog.info("debug log turned on")
+        sw.connect("notify::active", toggled)
+        g.add(sw)
+        where = debuglog.log_dir().replace(GLib.get_home_dir(), "~", 1)
+        row = Adw.ActionRow(title=_("Loggfiler"), subtitle=where, use_markup=False)
+
+        def open_dir(*_a):
+            os.makedirs(debuglog.log_dir(), exist_ok=True)
+            Gtk.FileLauncher.new(Gio.File.new_for_path(debuglog.log_dir())).launch(self, None, None, None)
+
+        def copy_last(*_a):
+            last = debuglog.latest()
+            if not last:
+                dlg.add_toast(Adw.Toast(title=_("Ingen logger ennå")))
+                return
+            with open(last, encoding="utf-8", errors="replace") as f:
+                text = f.read()[-2_000_000:]
+            self.get_clipboard().set(text)
+            dlg.add_toast(Adw.Toast(title=_("{} er kopiert").format(os.path.basename(last))))
+        for label, func in ((_("Åpne mappen"), open_dir), (_("Kopier siste logg"), copy_last)):
+            b = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+            b.connect("clicked", func)
+            row.add_suffix(b)
+        g.add(row)
+
     def set_system_accent(self, on):
         from ..i18n import set_setting
         set_setting("system_accent", on)
@@ -1020,6 +1061,7 @@ class MainWindow(Adw.ApplicationWindow):
                 m.history = m.client.call("history")
         except Exception as ex:
             if self.connected or self._structure_key is None:
+                debuglog.error("lost contact with vifted (or failed to show its state): %s", ex, exc=True)
                 self.connected = False
                 self._structure_key = "offline"
                 self.show_offline(ex)
@@ -1039,6 +1081,7 @@ class MainWindow(Adw.ApplicationWindow):
         try:
             self.model.push()
         except Exception as ex:
+            debuglog.error("could not send a change: %s", ex, exc=True)
             self.toast(_("Kunne ikke sende endring: {}").format(_(str(ex))))
             self.model.rev = -1   # hent tjenestens utgave på nytt ved neste oppdatering
         if rebuild:
@@ -1577,11 +1620,13 @@ class MainWindow(Adw.ApplicationWindow):
                 u()
             except Exception as ex:  # en defekt oppdatering skal ikke stoppe resten
                 print("oppdatering:", ex, file=sys.stderr)
+                debuglog.error_once(("update", repr(ex)), "update of a row failed: %s", ex)
         for d in list(self.live_dialogs):
             try:
                 d.update_live()
             except Exception as ex:  # en defekt dialog skal ikke stoppe resten
                 print("dialog:", ex, file=sys.stderr)
+                debuglog.error_once(("dialog", repr(ex)), "update of a dialog failed: %s", ex)
         self.update_header()
         self.update_tray()
         self.show_mcp_activity(st.get("mcp_log") or [])
@@ -2020,6 +2065,7 @@ class MainWindow(Adw.ApplicationWindow):
         page.add(g)
         g.add(spin_row(_("Oppdateringsintervall (s)"), self.model.state.get("interval", 1.0), 0.25, 10, 0.25,
                        lambda v: self.call("settings", interval=v), digits=2))
+        self.build_debug_settings(page, dlg)
         self.build_safety_settings(safety_page)
         self.build_alert_settings(safety_page)
         self.build_mcp_settings(claude_page)
@@ -2422,6 +2468,7 @@ class App(Adw.Application):
             self.hold()  # fortsett å kjøre i statusfeltet når vinduet lukkes
         except Exception as ex:
             print("statusfelt utilgjengelig:", ex, file=sys.stderr)
+            debuglog.error("system tray unavailable: %s", ex)
             self.tray = None
 
     def apply_palette(self):

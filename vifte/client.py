@@ -2,6 +2,7 @@
 import json
 import os
 import socket
+import time
 
 from .daemon import SYSTEM_SOCKET, user_paths
 
@@ -41,6 +42,17 @@ class Client:
         self.sock = self.file = None
 
     def call(self, cmd, **kw):
+        from . import debuglog
+        start = time.monotonic()
+        try:
+            resp = self._call(cmd, **kw)
+        except Exception as ex:
+            debuglog.call(cmd, kw, (time.monotonic() - start) * 1000, err=ex)
+            raise
+        debuglog.call(cmd, kw, (time.monotonic() - start) * 1000, result=resp)
+        return resp
+
+    def _call(self, cmd, **kw):
         for attempt in (0, 1):
             reused = self.sock is not None
             try:

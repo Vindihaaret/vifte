@@ -16,6 +16,11 @@ def main():
     ap.add_argument("command", nargs="?", choices=["status", "list", "save", "pause", "resume", "gui", "tray", "mcp", "uninstall"])
     ap.add_argument("--purge", action="store_true", help=_("slett også konfigurasjonene ved avinstallering"))
     a = ap.parse_args()
+    from . import debuglog
+    gui = a.command in ("gui", "tray") or a.window or a.minimized or (
+        not a.command and not a.config and not a.refresh)
+    debuglog.setup("mcp" if a.command == "mcp" else
+                   ("tray" if a.command == "tray" or a.minimized else "window") if gui else "cli")
     if a.command == "mcp":
         # MCP-server for Claude; stdout er reservert for protokollen.
         from .mcp import main as mcp_main
@@ -66,9 +71,11 @@ def main():
             from .gui import main as gui_main
             return gui_main(minimized=(a.command == "tray" or a.minimized) and not a.window)
     except OSError as e:
+        debuglog.error("cli: %s", e, exc=True)
         sys.exit(_("Får ikke kontakt med vifted ({}): {}\n"
                    "Start tjenesten: sudo systemctl start vifted").format(c.path, e))
     except Exception as e:
+        debuglog.error("cli: %s", e, exc=True)
         sys.exit(_("Feil: {}").format(_(str(e))))
 
 
