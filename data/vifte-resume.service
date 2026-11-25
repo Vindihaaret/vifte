@@ -1,6 +1,8 @@
 [Unit]
 Description=Vifte – ta tilbake viftestyringen etter hvilemodus
 After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+# Først når NVIDIA-driveren er ferdig med å vekke skjermkortet
+After=nvidia-resume.service
 
 [Service]
 Type=oneshot

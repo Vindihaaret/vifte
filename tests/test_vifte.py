@@ -8,6 +8,8 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -662,6 +664,96 @@ class McpTests(unittest.TestCase):
             self.assertTrue(t["description"])
             for req in t["inputSchema"].get("required", []):
                 self.assertIn(req, t["inputSchema"]["properties"])
+
+
+class SleepTests(unittest.TestCase):
+    """Hvilemodus: tjenesten gir fra seg viftene og holder seg unna maskinvaren (særlig
+    skjermkortet) til den får beskjed om at maskinen og NVIDIA-driveren er våkne igjen."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        holder = type("H", (), {})()
+        EngineTests.setUp(holder)
+        self.e, self.fake = holder.e, holder.fake
+        cfg = self.e.cfg
+        self.d = Daemon(self.dir, dry_run=True, engine=self.e)
+        self.e.cfg = cfg
+        self.fake.temps[CPU] = 50
+        self.clock = [1000.0]
+        patcher = mock.patch("vifte.daemon.time.monotonic", lambda: self.clock[0])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.d.step()
+        self.fan = self.fake.backends[FAN0]
+        self.assertTrue(self.fan.taken)
+
+    def sleep(self):
+        self.d.sleep_request.set()          # SIGUSR2 fra vifte-suspend.service
+        self.d.step()
+
+    def test_fans_are_released_and_hardware_left_alone_while_asleep(self):
+        self.sleep()
+        self.assertFalse(self.fan.taken)
+        self.assertTrue(self.d.handle({"cmd": "state"})["sleeping"])
+        writes = len(self.fan.writes)
+        with mock.patch.object(self.e, "tick", side_effect=AssertionError("leste maskinvaren")):
+            self.clock[0] += 5
+            self.d.step()
+        self.assertEqual(len(self.fan.writes), writes)
+
+    def test_wake_signal_takes_the_fans_back(self):
+        self.sleep()
+        self.d.reapply.set()                # SIGUSR1 fra vifte-resume.service
+        self.d.step()
+        self.assertIsNone(self.d.sleeping)
+        self.assertTrue(self.fan.taken)
+        self.assertFalse(self.d.handle({"cmd": "state"})["sleeping"])
+
+    def test_fans_taken_back_if_the_wake_signal_never_comes(self):
+        self.sleep()
+        self.clock[0] += Daemon.SLEEP_MAX_AWAKE - 1
+        self.d.step()
+        self.assertFalse(self.fan.taken)
+        self.clock[0] += 2
+        self.d.step()
+        self.assertIsNone(self.d.sleeping)
+        self.assertTrue(self.fan.taken)
+
+    def test_running_job_is_cancelled_and_new_jobs_refused(self):
+        self.d.task = {"kind": "calibrate", "done": False, "cancel": False}
+        self.sleep()
+        self.assertTrue(self.d.task["cancel"])
+        self.d.task["done"] = True
+        with self.assertRaises(RuntimeError):
+            self.d._start_task("calibrate", lambda task: None)
+
+    def test_wait_for_sleep_gives_up_when_the_service_is_not_running(self):
+        from vifte.daemon import wait_for_sleep
+        self.assertFalse(wait_for_sleep(os.path.join(self.dir, "ingen.sock"), timeout=5))
+
+
+class NvGuardTests(unittest.TestCase):
+    def test_hanging_call_times_out_and_recovers(self):
+        g = hw.NvGuard(timeout=0.2)
+        release = threading.Event()
+        self.assertEqual(g.call(lambda x: x + 1, 1), 2)
+        self.assertEqual(g.call(release.wait), hw.NvGuard.ERROR_TIMEOUT)
+        # Så lenge kallet henger, sendes ingen nye kall til driveren
+        called = []
+        self.assertEqual(g.call(called.append, 1), hw.NvGuard.ERROR_TIMEOUT)
+        self.assertEqual(called, [])
+        release.set()
+        time_left = 50
+        while g._stuck is not None and not g._stuck.is_set() and time_left:
+            time.sleep(0.02)
+            time_left -= 1
+        self.assertEqual(g.call(lambda: 0), 0)
+
+    def test_errors_are_passed_on(self):
+        g = hw.NvGuard(timeout=1)
+        with self.assertRaises(ValueError):
+            g.call(int, "x")
 
 
 class UpdaterTests(unittest.TestCase):

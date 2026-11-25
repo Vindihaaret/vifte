@@ -62,6 +62,7 @@ install -Dm644 data/no.vifte.Vifte-tray.desktop /etc/xdg/autostart/no.vifte.Vift
 gtk-update-icon-cache -q /usr/local/share/icons/hicolor 2>/dev/null || true
 install -Dm644 data/vifted.service /etc/systemd/system/vifted.service
 install -Dm644 data/vifte-resume.service /etc/systemd/system/vifte-resume.service
+install -Dm644 data/vifte-suspend.service /etc/systemd/system/vifte-suspend.service
 
 echo "==> Access for the GUI (group \"vifte\")"
 getent group vifte >/dev/null || groupadd -r vifte
@@ -87,7 +88,7 @@ have_pwm || echo "    No Super I/O driver with PWM control found. See README (Tr
 echo "==> Starting the service"
 systemctl daemon-reload
 systemctl enable --now vifted.service
-systemctl enable vifte-resume.service
+systemctl enable vifte-resume.service vifte-suspend.service
 sleep 2
 systemctl --no-pager --lines=5 status vifted.service || true
 echo

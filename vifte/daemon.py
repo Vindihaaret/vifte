@@ -85,6 +85,9 @@ class Daemon:
     HISTORY_EVERY = 5.0      # sekunder mellom hvert historikkpunkt
     TICK_FAILURES_BEFORE_RELEASE = 5   # så mange mislykkede runder på rad før BIOS får viftene
     HISTORY_KEEP = 360       # 30 minutter
+    # Kommer ikke beskjeden om oppvåkning (vifte-resume.service), tar tjenesten viftene selv
+    # etter så mange sekunder våken tid. time.monotonic() står stille mens maskinen sover.
+    SLEEP_MAX_AWAKE = 120.0
 
     def __init__(self, data_dir, dry_run=False, engine=None):
         self.data_dir = data_dir
@@ -136,6 +139,8 @@ class Daemon:
         self.task = None   # {"kind", "progress", "message", "cancel"}
         self.stop = threading.Event()
         self.reapply = threading.Event()   # settes etter hvilemodus (SIGUSR1)
+        self.sleep_request = threading.Event()   # settes før hvilemodus (SIGUSR2)
+        self.sleeping = None   # time.monotonic() da maskinen skulle i hvilemodus, ellers None
         self._failures = 0
         try:
             self.load(self.settings["current"], create=True)
@@ -353,10 +358,23 @@ class Daemon:
         BIOS/driveren i stedet for å bli stående på den siste verdien."""
         with self.lock:
             try:
+                if self.sleep_request.is_set():
+                    self.sleep_request.clear()
+                    self.reapply.clear()
+                    self.prepare_sleep()
                 if self.reapply.is_set():
                     self.reapply.clear()
-                    log.info("tar viftene på nytt (etter hvilemodus)")
+                    if self.sleeping is not None:
+                        self.sleeping = None
+                        log.info("maskinen er våken igjen, tar viftene tilbake")
+                    else:
+                        log.info("tar viftene på nytt (etter hvilemodus)")
                     self.engine.reapply()
+                if self.sleeping is not None:
+                    if time.monotonic() - self.sleeping < self.SLEEP_MAX_AWAKE:
+                        return
+                    log.warning("fikk ingen beskjed om oppvåkning, tar viftene tilbake likevel")
+                    self.sleeping = None
                 self.engine.tick()
                 self.record_history()
                 self._failures = 0
@@ -367,6 +385,17 @@ class Daemon:
                     log.error("reguleringen feiler gjentatte ganger – viftene gis tilbake til BIOS/driver")
                 if self._failures >= self.TICK_FAILURES_BEFORE_RELEASE:
                     self.engine.release_all()
+
+    def prepare_sleep(self):
+        """Før hvilemodus (kalleren holder låsen): gi viftene tilbake til BIOS/driveren og
+        les ikke maskinvaren igjen før beskjeden om oppvåkning. Leser tjenesten skjermkortet
+        (NVML) mens NVIDIA-driveren ennå holder på å våkne, kan driveren låse seg, og da
+        blir skjermen stående svart."""
+        if self.task and not self.task.get("done"):
+            self.task["cancel"] = True
+        self.engine.release_all()
+        self.sleeping = time.monotonic()
+        log.info("hvilemodus: viftene er gitt tilbake til BIOS/driver til maskinen våkner")
 
     def run(self):
         sd_notify("READY=1")
@@ -385,6 +414,8 @@ class Daemon:
         with self.lock:
             if self.task and not self.task.get("done"):
                 raise RuntimeError("en annen jobb kjører allerede")
+            if self.sleeping is not None:
+                raise RuntimeError("maskinen går i hvilemodus – prøv igjen når den er våken")
             self.task = {"kind": kind, "progress": 0.0, "done": False, "cancel": False, "result": None,
                          "undo": undo}
             self._say(self.task, "Starter …")
@@ -599,7 +630,8 @@ class Daemon:
                 task = {k: v for k, v in self.task.items() if k not in ("cancel", "undo")}
             snap.update(rev=self.rev, dirty=self.dirty, current=self.settings["current"],
                         configs=self.list_configs(), task=task, interval=e.interval,
-                        safety=self.safety(), mcp_log=list(self.mcp_log)[-10:])
+                        safety=self.safety(), mcp_log=list(self.mcp_log)[-10:],
+                        sleeping=self.sleeping is not None)
             return snap
         if cmd == "get_config":
             with self.lock:
@@ -774,6 +806,28 @@ class Server(socketserver.ThreadingUnixStreamServer):
     check_peer = False
 
 
+def wait_for_sleep(sock_path, timeout=10.0):
+    """Venter til tjenesten melder at den har gitt fra seg viftene (etter SIGUSR2). Hvilemodus
+    skal aldri stoppe av dette: kjører ikke tjenesten, eller svarer den ikke, gis det opp."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(2.0)
+                s.connect(sock_path)
+                s.sendall(b'{"cmd": "state"}\n')
+                with s.makefile("rb") as f:
+                    resp = json.loads(f.readline() or b"{}")
+            if resp.get("sleeping"):
+                return True
+        except (OSError, ValueError):
+            if not os.path.exists(sock_path):
+                return False
+        time.sleep(0.2)
+    log.warning("vifted meldte ikke at viftene er gitt fra seg før hvilemodus")
+    return False
+
+
 def main():
     ap = argparse.ArgumentParser(prog="vifted", description="Vifte – vifte-styringstjeneste")
     ap.add_argument("--user-test", action="store_true",
@@ -782,8 +836,13 @@ def main():
     ap.add_argument("-c", "--config", help="last denne konfigurasjonen ved oppstart")
     ap.add_argument("--release-fans", action="store_true",
                     help="gi tilbake vifter som står igjen i manuell modus etter et avbrudd, og avslutt")
+    ap.add_argument("--wait-for-sleep", action="store_true",
+                    help="vent til tjenesten har gitt fra seg viftene før hvilemodus (vifte-suspend.service)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args()
+    # Til de virkelige håndtererne er på plass under: et signal skal ikke avslutte tjenesten.
+    signal.signal(signal.SIGUSR1, signal.SIG_IGN)
+    signal.signal(signal.SIGUSR2, signal.SIG_IGN)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if a.release_fans:
@@ -791,6 +850,9 @@ def main():
         n = hw.restore_saved_modes()
         if n:
             log.warning("%d vifte(r) sto igjen i manuell modus og er gitt tilbake til BIOS", n)
+        return
+    if a.wait_for_sleep:
+        wait_for_sleep(SYSTEM_SOCKET)
         return
     if a.user_test:
         data_dir, sock = user_paths()
@@ -832,6 +894,8 @@ def main():
     # «systemctl reload vifted» (etter hvilemodus): ta viftene på nytt uten å starte tjenesten
     # på nytt, så ulagrede endringer ikke går tapt.
     signal.signal(signal.SIGUSR1, lambda *_: d.reapply.set())
+    # vifte-suspend.service før hvilemodus: gi fra seg viftene og hold seg unna maskinvaren
+    signal.signal(signal.SIGUSR2, lambda *_: d.sleep_request.set())
     log.info("vifted kjører (socket %s%s)", sock, ", TØRRKJØRING" if dry else "")
     d.run()
     srv.shutdown()

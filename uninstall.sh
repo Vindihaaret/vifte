@@ -23,10 +23,10 @@ if [ "$YES" -eq 0 ] && [ -t 0 ]; then
 fi
 
 echo "==> Stopping the service (fans are handed back to the BIOS)"
-systemctl disable --now vifted.service vifte-resume.service 2>/dev/null || true
+systemctl disable --now vifted.service vifte-resume.service vifte-suspend.service 2>/dev/null || true
 
 echo "==> Removing files"
-rm -f /etc/systemd/system/vifted.service /etc/systemd/system/vifte-resume.service
+rm -f /etc/systemd/system/vifted.service /etc/systemd/system/vifte-resume.service /etc/systemd/system/vifte-suspend.service
 rm -rf /opt/vifte
 rm -f /usr/local/bin/vifte /usr/local/share/applications/no.vifte.Vifte.desktop \
       /usr/local/share/icons/hicolor/scalable/apps/no.vifte.Vifte.svg \

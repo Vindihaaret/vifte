@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import threading
 
 log = logging.getLogger("vifte.hw")
 
@@ -349,8 +350,68 @@ class _FanSpeedInfo(C.Structure):
     _fields_ = [("version", C.c_uint), ("fan", C.c_uint), ("speed", C.c_uint)]
 
 
+class NvGuard:
+    """Kjører NVML-kall i én egen tråd med tidsgrense.
+
+    Et kall som henger i NVIDIA-driveren (f.eks. rett etter hvilemodus) skal ikke stoppe hele
+    reguleringen: hovedkortviftene styres videre, og skjermkortets sensorer regnes som tapt
+    (sensortap-sikringen slår inn) til det hengende kallet er ferdig.
+    """
+    TIMEOUT = 3.0
+    ERROR_TIMEOUT = 10   # NVML_ERROR_TIMEOUT
+
+    def __init__(self, timeout=None):
+        self.timeout = self.TIMEOUT if timeout is None else timeout
+        self._lock = threading.Lock()
+        self._job = None
+        self._ready = threading.Condition()
+        self._stuck = None   # Event for kallet som henger
+        threading.Thread(target=self._run, daemon=True, name="nvml").start()
+
+    def _run(self):
+        while True:
+            with self._ready:
+                while self._job is None:
+                    self._ready.wait()
+                fn, args, box, done = self._job
+                self._job = None
+            try:
+                box.append((True, fn(*args)))
+            except Exception as e:
+                box.append((False, e))
+            done.set()
+
+    def call(self, fn, *args):
+        with self._lock:
+            if self._stuck is not None:
+                if not self._stuck.is_set():
+                    return self.ERROR_TIMEOUT
+                self._stuck = None
+                log.info("NVIDIA-driveren svarer igjen")
+            box, done = [], threading.Event()
+            with self._ready:
+                self._job = (fn, args, box, done)
+                self._ready.notify()
+            if not done.wait(self.timeout):
+                self._stuck = done
+                log.error("NVIDIA-driveren svarer ikke (%s) – skjermkortets sensorer regnes som tapt",
+                          getattr(fn, "__name__", "NVML"))
+                return self.ERROR_TIMEOUT
+            ok, value = box[0]
+            if not ok:
+                raise value
+            return value
+
+
 class Nvml:
     lib = None
+    guard = None
+
+    @classmethod
+    def call(cls, name, *args):
+        if cls.guard is None:
+            cls.guard = NvGuard()
+        return cls.guard.call(getattr(cls.lib, name), *args)
 
     @classmethod
     def load(cls):
@@ -370,7 +431,7 @@ class NvFan:
 
     def read(self):
         v = C.c_uint()
-        if Nvml.lib.nvmlDeviceGetFanSpeed_v2(self.h, self.fan, C.byref(v)) != 0:
+        if Nvml.call("nvmlDeviceGetFanSpeed_v2", self.h, self.fan, C.byref(v)) != 0:
             return None
         return float(v.value)
 
@@ -386,16 +447,16 @@ class NvFan:
             return
         if percent <= 0:
             # Som i FanControl: 0 % gir styringen tilbake til kortet (0 RPM-modus).
-            Nvml.lib.nvmlDeviceSetDefaultFanSpeed_v2(self.h, self.fan)
+            Nvml.call("nvmlDeviceSetDefaultFanSpeed_v2", self.h, self.fan)
             return
         p = int(round(max(percent, self.min)))
-        r = Nvml.lib.nvmlDeviceSetFanSpeed_v2(self.h, self.fan, p)
+        r = Nvml.call("nvmlDeviceSetFanSpeed_v2", self.h, self.fan, p)
         if r != 0:
             raise OSError(f"nvmlDeviceSetFanSpeed_v2 feilet ({r}), kjører som root?")
 
     def release(self):
         if not self.dry_run:
-            Nvml.lib.nvmlDeviceSetDefaultFanSpeed_v2(self.h, self.fan)
+            Nvml.call("nvmlDeviceSetDefaultFanSpeed_v2", self.h, self.fan)
 
 
 def scan_nvidia(dry_run=False):
@@ -423,7 +484,7 @@ def scan_nvidia(dry_run=False):
 
         def temp(h=h):
             v = C.c_uint()
-            if lib.nvmlDeviceGetTemperature(h, 0, C.byref(v)) != 0:
+            if Nvml.call("nvmlDeviceGetTemperature", h, 0, C.byref(v)) != 0:
                 return None
             return float(v.value)
 
@@ -436,7 +497,7 @@ def scan_nvidia(dry_run=False):
         for f in range(nf.value):
             def rpm(h=h, f=f):
                 info = _FanSpeedInfo(C.sizeof(_FanSpeedInfo) | (1 << 24), f, 0)
-                if lib.nvmlDeviceGetFanSpeedRPM(h, C.byref(info)) != 0:
+                if Nvml.call("nvmlDeviceGetFanSpeedRPM", h, C.byref(info)) != 0:
                     return None
                 return float(info.speed)
 

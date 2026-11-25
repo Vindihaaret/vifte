@@ -1,0 +1,16 @@
+[Unit]
+Description=Vifte – gi viftene til BIOS før hvilemodus
+# Før NVIDIA-driveren legger skjermkortet i dvale, så tjenesten ikke leser det mens det sover
+# eller holder på å våkne (da kan driveren låse seg, og skjermen blir stående svart).
+Before=sleep.target nvidia-suspend.service nvidia-hibernate.service nvidia-suspend-then-hibernate.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=/opt/vifte
+# «-»: hvilemodus skal aldri stoppe fordi Vifte ikke kjører eller ikke svarer
+ExecStart=-/usr/bin/systemctl kill --kill-whom=main --signal=SIGUSR2 vifted.service
+ExecStart=-/usr/bin/python3 -m vifte.daemon --wait-for-sleep
+TimeoutStartSec=20
+
+[Install]
+WantedBy=sleep.target
